@@ -1,0 +1,84 @@
+import mongoose from "mongoose";
+
+const takaDetailSchema = new mongoose.Schema(
+  {
+    takaNo: { type: String, required: true },
+    meter: { type: Number, required: true },
+    weight: { type: Number },
+    isStamped: { type: Boolean, default: false },
+    stampedAt: { type: String },
+  },
+  { _id: false }
+);
+
+const orderSchema = new mongoose.Schema(
+  {
+    orderDate: { type: String, required: true },
+    firmId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Account",
+      required: true,
+    },
+    firmName: { type: String, required: true },
+    masterId: { type: mongoose.Schema.Types.ObjectId, ref: "Account" },
+    masterName: { type: String },
+    marka: { type: String, required: true },
+    // Weaver details
+    weaverId: { type: mongoose.Schema.Types.ObjectId, ref: "Weaver" },
+    weaverName: { type: String },
+    weaverChNo: { type: String },
+    weaverMarka: { type: String },
+    weaverChDate: { type: String },
+    // Fabric
+    qualityId: { type: mongoose.Schema.Types.ObjectId, ref: "Quality" },
+    qualityName: { type: String, required: true },
+    weight: { type: Number },
+    length: { type: Number },
+    width: { type: Number },
+    chadti: { type: Number },
+    totalTaka: { type: Number, required: true },
+    totalMeter: { type: Number, required: true },
+    jobRate: { type: Number },
+    greyRate: { type: Number },
+    // Shipping
+    shippingMode: {
+      type: String,
+      required: true,
+      enum: ["DirectMills", "MarketTempo", "ByLR"],
+    },
+    vehicleNo: { type: String },
+    driverMobile: { type: String },
+    transportName: { type: String },
+    lrNo: { type: String },
+    lrDate: { type: String },
+    noBales: { type: Number },
+    baleNo: { type: String },
+    chequeAmount: { type: Number },
+    lrFileId: { type: String },
+    receiverName: { type: String },
+    receiverMobile: { type: String },
+    // Status
+    status: {
+      type: String,
+      required: true,
+      enum: [
+        "PendingChallan",
+        "ChallanIssued",
+        "LotCreated",
+        "InProcess",
+        "Completed",
+        "Dispatched",
+      ],
+      default: "PendingChallan",
+    },
+    takaDetails: [takaDetailSchema],
+    ocrFileId: { type: String },
+    ocrExtractedData: { type: String },
+  },
+  { timestamps: true }
+);
+
+orderSchema.index({ status: 1 });
+orderSchema.index({ firmId: 1 });
+
+export default mongoose.model("Order", orderSchema);
