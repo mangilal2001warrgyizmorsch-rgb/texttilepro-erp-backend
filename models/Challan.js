@@ -2,33 +2,68 @@ import mongoose from "mongoose";
 
 const challanSchema = new mongoose.Schema(
   {
-    challanDate: { type: String, required: true },
-    challanNo: { type: String, required: true, unique: true },
+    // Basic Details
+    challan_no: { type: String, required: true, unique: true },
+    challan_date: { type: String, required: true },
+    date: { type: String, required: true },
+    firm: { type: String, required: true },
+    party: { type: String, required: true },
+    party_address: { type: String },
+    gstin_no: { type: String },
+
+    // Item & Quality
+    quality: { type: String, required: true },
+    hsn_code: { type: String },
+    item: { type: String },
+    taka: { type: String, required: true },
+    meter: { type: String, required: true },
+    dyed_print: { type: String },
+    weaver: { type: String },
+
+    // Rates & Amounts
+    fas_rate: { type: String },
+    amount: { type: String },
+    weight: { type: String },
+    total: { type: String },
+    chadhti: { type: String },
+    width: { type: String },
+    pu_bill_no: { type: String },
+
+    // Dispatch Details
+    lr_no: { type: String },
+    lr_date: { type: String },
+    transpoter: { type: String },
+    remark: { type: String },
+
+    // Taka Details Table
+    table: [
+      {
+        tn: { type: Number },
+        meter: { type: String },
+      },
+    ],
+
+    // Status & References (for backward compatibility)
     orderId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Order",
-      required: true,
     },
     firmId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Account",
-      required: true,
     },
-    firmName: { type: String, required: true },
-    marka: { type: String, required: true },
-    totalTaka: { type: Number, required: true },
-    totalMeter: { type: Number, required: true },
     status: {
       type: String,
-      required: true,
-      enum: ["Active", "LotCreated"],
-      default: "Active",
+      enum: ["draft", "approved"],
+      default: "draft",
     },
   },
   { timestamps: true }
 );
 
-challanSchema.index({ orderId: 1 });
+challanSchema.index({ challan_no: 1 });
+challanSchema.index({ firm: 1 });
+challanSchema.index({ party: 1 });
 challanSchema.index({ status: 1 });
 
 export default mongoose.model("Challan", challanSchema);
