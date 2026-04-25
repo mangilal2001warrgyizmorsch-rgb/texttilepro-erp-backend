@@ -1,19 +1,16 @@
-import { Router } from "express";
-import { requireAuth } from "../middleware/auth.js";
-import multer from "multer";
-import Account from "../models/Account.js";
-import Quality from "../models/Quality.js";
-import Weaver from "../models/Weaver.js";
+import mongoose from "mongoose";
+import Account from "./models/Account.js";
+import Quality from "./models/Quality.js";
+import Weaver from "./models/Weaver.js";
+import dotenv from "dotenv";
 
-const router = Router();
-const upload = multer({ limits: { fileSize: 15 * 1024 * 1024 } }); // 15MB limit
+dotenv.config();
 
 // Helper to escape regex special characters
 function escapeRegExp(string) {
   return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-// Helper to ensure masters exist in the database
 async function ensureMasters(data, cache = {}) {
   const { partyName, partyAddress, gstin, weaverName, qualityName, transporterName, hsnCode } = data;
   
@@ -154,87 +151,22 @@ async function ensureMasters(data, cache = {}) {
   return masters;
 }
 
-// POST /api/ocr/extract
-router.post("/extract", requireAuth, upload.single("file"), async (req, res, next) => {
-  try {
-    const file = req.file;
-    if (!file) {
-      return res.status(400).json({ error: "No file provided" });
-    }
+async function run() {
+  await mongoose.connect(process.env.MONGODB_URI);
+  console.log("Connected to DB");
+  
+  await ensureMasters({
+    partyName: "Test Party",
+    partyAddress: "Test Address",
+    gstin: "Test GSTIN",
+    qualityName: "Test Quality",
+    weaverName: "Test Weaver",
+    transporterName: "Test Transporter",
+    hsnCode: "Test HSN"
+  });
+  
+  console.log("Done");
+  process.exit(0);
+}
 
-    console.log(`🔍 Forwarding file ${file.originalname} to external OCR API...`);
-
-    // Prepare FormData for the external API
-    const externalFormData = new FormData();
-    const blob = new Blob([file.buffer], { type: file.mimetype });
-    externalFormData.append("file", blob, file.originalname);
-
-    // Call the user's preferred API with a timeout
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 60000); // 60s timeout
-
-    let externalResponse;
-    try {
-      externalResponse = await fetch("https://challan-extractor.onrender.com/extract", {
-        method: "POST",
-        body: externalFormData,
-        signal: controller.signal,
-        headers: {
-          'Accept': 'application/json',
-          'User-Agent': 'TextilePro-ERP-Backend'
-        }
-      });
-    } finally {
-      clearTimeout(timeoutId);
-    }
-
-    if (!externalResponse.ok) {
-      const errorText = await externalResponse.text();
-      console.error(`❌ External OCR API Error: ${externalResponse.status} - ${errorText}`);
-      throw new Error(`External OCR API failed: ${externalResponse.status}`);
-    }
-
-    const data = await externalResponse.json();
-    
-    // The API returns { challans: [...] }
-    if (!data.challans || !Array.isArray(data.challans)) {
-       return res.json(data); 
-    }
-
-    // Process each challan sequentially to avoid duplicate master creation if multiple challans have same Mill/Quality
-    const processedChallans = [];
-    const masterCache = {}; // Local cache for this request to avoid redundant DB checks
-    for (const c of data.challans) {
-      const masters = await ensureMasters({
-        partyName: c.firm || c.party, 
-        partyAddress: c.party_address,
-        gstin: c.gstin_no,
-        qualityName: c.quality,
-        weaverName: c.weaver,
-        transporterName: c.transpoter,
-        hsnCode: c.hsn_code
-      }, masterCache);
-      
-      processedChallans.push({
-        ...c,
-        ...masters
-      });
-    }
-
-    // Return the processed batch
-    res.json({
-      ...data,
-      challans: processedChallans
-    });
-
-  } catch (err) {
-    if (err.name === 'AbortError') {
-      console.error("❌ OCR Proxy Error: External API timed out after 60s");
-      return res.status(504).json({ error: "OCR extraction timed out. The external service might be slow." });
-    }
-    console.error("❌ OCR Proxy Error:", err.message);
-    next(err);
-  }
-});
-
-export default router;
+run();

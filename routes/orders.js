@@ -86,15 +86,17 @@ router.post("/batch", requireAuth, async (req, res, next) => {
 
       // 2. Create Internal Challan (Required for Lot model)
       const challan = await Challan.create({
-        challanDate: data.challan_date || data.date || new Date().toISOString().split('T')[0],
-        challanNo: data.challan_no,
+        challan_no: data.challan_no || data.weaverChNo,
+        challan_date: data.challan_date || data.weaverChDate || data.date || data.orderDate || new Date().toISOString().split('T')[0],
+        date: data.date || data.orderDate || new Date().toISOString().split('T')[0],
+        firm: data.firm || data.firmName || "N/A",
+        party: data.party || data.partyName || "N/A",
+        quality: data.quality || data.qualityName || "N/A",
+        taka: String(data.taka || data.totalTaka || "0"),
+        meter: String(data.meter || data.totalMeter || "0"),
         orderId: order._id,
-        firmId: data.firmId || data.partyId, // Fallback if specific IDs aren't provided
-        firmName: data.firm || data.partyName,
-        marka: data.marka || data.weaverMarka,
-        totalTaka: Number(data.taka || data.takaCount),
-        totalMeter: Number(data.meter || data.totalMeter),
-        status: "LotCreated",
+        firmId: data.firmId || data.partyId,
+        status: "draft",
       });
 
       // 3. Generate Lot No and Create Lot
@@ -111,13 +113,13 @@ router.post("/batch", requireAuth, async (req, res, next) => {
         lotNo,
         challanId: challan._id,
         orderId: order._id,
-        partyId: data.partyId,
-        partyName: data.party || data.partyName,
-        marka: data.marka || data.weaverMarka,
-        qualityName: data.quality || data.qualityName,
-        totalTaka: Number(data.taka || data.takaCount),
-        totalMeter: Number(data.meter || data.totalMeter),
-        balanceMeter: Number(data.meter || data.totalMeter),
+        partyId: data.partyId || data.firmId,
+        partyName: data.party || data.partyName || data.firm || data.firmName || "N/A",
+        marka: data.marka || data.weaverMarka || "N/A",
+        qualityName: data.quality || data.qualityName || "N/A",
+        totalTaka: Number(data.taka || data.totalTaka || 0),
+        totalMeter: Number(data.meter || data.totalMeter || 0),
+        balanceMeter: Number(data.meter || data.totalMeter || 0),
         status: "InStorage",
       });
 
