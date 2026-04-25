@@ -15,137 +15,104 @@ function escapeRegExp(string) {
 
 // Helper to ensure masters exist in the database
 async function ensureMasters(data, cache = {}) {
-  const { partyName, partyAddress, gstin, weaverName, qualityName, transporterName, hsnCode } = data;
+  const { 
+    firmName, // The internal firm (Delivery At)
+    partyName, // The customer (M/s Party)
+    weaverName, // The sender (Header)
+    qualityName,
+    transporterName,
+    hsnCode 
+  } = data;
   
   const masters = {
-    millId: null,
+    firmId: null,
+    partyId: null,
     weaverId: null,
     qualityId: null,
-    transporterId: null
+    transporterId: null,
+    partyNotFound: false
   };
 
   try {
+    // 1. Internal Firm (Mill)
+    if (firmName) {
+      const cleanName = firmName.trim();
+      let account = await Account.findOne({ 
+        accountName: { $regex: new RegExp(`^${escapeRegExp(cleanName)}$`, 'i') },
+        roleType: "Mill"
+      });
+      if (!account) {
+        account = await Account.create({
+          accountName: cleanName,
+          roleType: "Mill",
+          isActive: true
+        });
+      }
+      masters.firmId = account._id;
+    }
+
+    // 2. Party (Customer) - DO NOT AUTO CREATE
     if (partyName) {
       const cleanName = partyName.trim();
-      const cacheKey = `mill_${cleanName}`;
-      if (cache[cacheKey]) {
-        masters.millId = cache[cacheKey];
+      let account = await Account.findOne({ 
+        accountName: { $regex: new RegExp(`^${escapeRegExp(cleanName)}$`, 'i') },
+        roleType: { $in: ["Master", "Customer", "Supplier"] }
+      });
+      if (account) {
+        masters.partyId = account._id;
+        masters.partyName = account.accountName;
       } else {
-        let account = await Account.findOne({ 
-          accountName: { $regex: new RegExp(`^${escapeRegExp(cleanName)}$`, 'i') },
-          roleType: "Mill"
-        });
-        
-        let shouldSave = false;
-        if (!account) {
-          account = new Account({
-            accountName: cleanName,
-            roleType: "Mill",
-            gstType: "Regular",
-            isActive: true,
-            address: partyAddress || undefined,
-            gstin: gstin || undefined
-          });
-          shouldSave = true;
-          console.log(`✅ Created new Mill: ${cleanName}`);
-        } else {
-          if (!account.address && partyAddress) {
-            account.address = partyAddress;
-            shouldSave = true;
-          }
-          if (!account.gstin && gstin) {
-            account.gstin = gstin;
-            shouldSave = true;
-          }
-          if (shouldSave) {
-            console.log(`✅ Updated missing info for Mill: ${cleanName}`);
-          }
-        }
-        
-        if (shouldSave) await account.save();
-        masters.millId = account._id;
-        cache[cacheKey] = account._id;
+        masters.partyNotFound = true;
+        masters.partyName = cleanName; // Keep the name for display
       }
     }
 
-    if (weaverName && weaverName.trim()) {
+    // 3. Weaver
+    if (weaverName) {
       const cleanName = weaverName.trim();
-      const cacheKey = `weaver_${cleanName}`;
-      if (cache[cacheKey]) {
-        masters.weaverId = cache[cacheKey];
-      } else {
-        let weaver = await Weaver.findOne({ 
-          weaverName: { $regex: new RegExp(`^${escapeRegExp(cleanName)}$`, 'i') } 
+      let weaver = await Weaver.findOne({ 
+        weaverName: { $regex: new RegExp(`^${escapeRegExp(cleanName)}$`, 'i') } 
+      });
+      if (!weaver) {
+        weaver = await Weaver.create({
+          weaverName: cleanName,
+          weaverCode: cleanName.substring(0, 3).toUpperCase() + Math.floor(Math.random() * 1000)
         });
-        if (!weaver) {
-          weaver = await Weaver.create({
-            weaverName: cleanName,
-            weaverCode: cleanName.substring(0, 3).toUpperCase() + Math.floor(Math.random() * 1000)
-          });
-          console.log(`✅ Created new Weaver: ${cleanName}`);
-        }
-        masters.weaverId = weaver._id;
-        cache[cacheKey] = weaver._id;
       }
+      masters.weaverId = weaver._id;
     }
 
+    // 4. Quality
     if (qualityName) {
       const cleanName = qualityName.trim();
-      const cacheKey = `quality_${cleanName}`;
-      if (cache[cacheKey]) {
-        masters.qualityId = cache[cacheKey];
-      } else {
-        let quality = await Quality.findOne({ 
-          qualityName: { $regex: new RegExp(`^${escapeRegExp(cleanName)}$`, 'i') } 
+      let quality = await Quality.findOne({ 
+        qualityName: { $regex: new RegExp(`^${escapeRegExp(cleanName)}$`, 'i') } 
+      });
+      if (!quality) {
+        quality = await Quality.create({
+          qualityName: cleanName,
+          processType: "Dyeing",
+          hsnCode: hsnCode || undefined
         });
-        
-        let shouldSave = false;
-        if (!quality) {
-          quality = new Quality({
-            qualityName: cleanName,
-            processType: "Dyeing",
-            hsnCode: hsnCode || undefined
-          });
-          shouldSave = true;
-          console.log(`✅ Created new Quality: ${cleanName}`);
-        } else {
-          if (!quality.hsnCode && hsnCode) {
-            quality.hsnCode = hsnCode;
-            shouldSave = true;
-          }
-          if (shouldSave) {
-            console.log(`✅ Updated missing info for Quality: ${cleanName}`);
-          }
-        }
-        
-        if (shouldSave) await quality.save();
-        masters.qualityId = quality._id;
-        cache[cacheKey] = quality._id;
       }
+      masters.qualityId = quality._id;
     }
 
-    if (transporterName && transporterName.trim()) {
+    // 5. Transporter
+    if (transporterName) {
       const cleanName = transporterName.trim();
-      const cacheKey = `transporter_${cleanName}`;
-      if (cache[cacheKey]) {
-        masters.transporterId = cache[cacheKey];
-      } else {
-        let transporter = await Account.findOne({ 
-          accountName: { $regex: new RegExp(`^${escapeRegExp(cleanName)}$`, 'i') },
-          roleType: "Transporter"
+      let transporter = await Account.findOne({ 
+        accountName: { $regex: new RegExp(`^${escapeRegExp(cleanName)}$`, 'i') },
+        roleType: "Transporter"
+      });
+      if (!transporter) {
+        transporter = await Account.create({
+          accountName: cleanName,
+          roleType: "Transporter",
+          isActive: true
         });
-        if (!transporter) {
-          transporter = await Account.create({
-            accountName: cleanName,
-            roleType: "Transporter",
-            gstType: "Regular",
-            isActive: true
-          });
-          console.log(`✅ Created new Transporter: ${cleanName}`);
-        }
-        masters.transporterId = transporter._id;
-        cache[cacheKey] = transporter._id;
       }
+      masters.transporterId = transporter._id;
     }
   } catch (err) {
     console.error("❌ Error ensuring masters:", err);
@@ -206,11 +173,10 @@ router.post("/extract", requireAuth, upload.single("file"), async (req, res, nex
     const masterCache = {}; // Local cache for this request to avoid redundant DB checks
     for (const c of data.challans) {
       const masters = await ensureMasters({
-        partyName: c.firm || c.party, 
-        partyAddress: c.party_address,
-        gstin: c.gstin_no,
+        firmName: c.delivery_at, // Internal Mill (Destination)
+        partyName: c.party, // Customer (Buyer)
+        weaverName: c.firm || c.weaver, // Sender (Weaver)
         qualityName: c.quality,
-        weaverName: c.weaver,
         transporterName: c.transpoter,
         hsnCode: c.hsn_code
       }, masterCache);

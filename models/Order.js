@@ -3,6 +3,7 @@ import mongoose from "mongoose";
 const takaDetailSchema = new mongoose.Schema(
   {
     takaNo: { type: String, required: true },
+    marka: { type: String },
     meter: { type: Number, required: true },
     weight: { type: Number },
     isStamped: { type: Boolean, default: false },

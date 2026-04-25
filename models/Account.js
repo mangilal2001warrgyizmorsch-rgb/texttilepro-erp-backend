@@ -8,7 +8,7 @@ const accountSchema = new mongoose.Schema(
     roleType: {
       type: String,
       required: true,
-      enum: ["Mill", "Weaver", "Transporter", "Master"],
+      enum: ["Mill", "Weaver", "Transporter", "Master", "Customer", "Supplier"],
     },
     panNo: { type: String },
     gstType: {

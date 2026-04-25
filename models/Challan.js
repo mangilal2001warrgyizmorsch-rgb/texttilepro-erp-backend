@@ -39,6 +39,7 @@ const challanSchema = new mongoose.Schema(
     table: [
       {
         tn: { type: Number },
+        marka: { type: String },
         meter: { type: String },
       },
     ],
