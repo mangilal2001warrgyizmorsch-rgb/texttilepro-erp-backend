@@ -55,8 +55,8 @@ const challanSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ["draft", "approved"],
-      default: "draft",
+      enum: ["draft", "pending", "approved"],
+      default: "pending",
     },
   },
   { timestamps: true }

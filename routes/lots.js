@@ -46,6 +46,11 @@ router.post("/", requireAuth, async (req, res, next) => {
     const order = await Order.findById(req.body.orderId);
     if (!order) return res.status(404).json({ error: "Order not found" });
 
+    // Verify challan exists and is in correct status
+    const challan = await Challan.findById(req.body.challanId);
+    if (!challan) return res.status(404).json({ error: "Challan not found" });
+    if (challan.status !== "pending") return res.status(400).json({ error: "Challan must be in pending status to create lot" });
+
     const lotNo = await generateLotNo();
     const lotData = {
       ...req.body,

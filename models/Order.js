@@ -23,6 +23,7 @@ const orderSchema = new mongoose.Schema(
     firmName: { type: String, required: true },
     masterId: { type: mongoose.Schema.Types.ObjectId, ref: "Account" },
     masterName: { type: String },
+    partyChallanNo: { type: String },
     marka: { type: String, required: true },
     // Weaver details
     weaverId: { type: mongoose.Schema.Types.ObjectId, ref: "Weaver" },
@@ -63,6 +64,7 @@ const orderSchema = new mongoose.Schema(
       type: String,
       required: true,
       enum: [
+        "draft",
         "PendingChallan",
         "ChallanIssued",
         "LotCreated",
@@ -70,7 +72,7 @@ const orderSchema = new mongoose.Schema(
         "Completed",
         "Dispatched",
       ],
-      default: "PendingChallan",
+      default: "draft",
     },
     takaDetails: [takaDetailSchema],
     ocrFileId: { type: String },

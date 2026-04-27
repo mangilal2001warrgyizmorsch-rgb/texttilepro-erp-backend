@@ -87,10 +87,10 @@ router.post("/", requireAuth, async (req, res, next) => {
     const challan = await Challan.create({ 
       ...req.body, 
       challan_no: challanNo, 
-      status: "draft" 
+      status: "pending" 
     });
     if (req.body.orderId) {
-      await Order.findByIdAndUpdate(req.body.orderId, { status: "ChallanIssued" });
+      await Order.findByIdAndUpdate(req.body.orderId, { status: "PendingChallan" });
     }
     res.status(201).json(challan);
   } catch (err) {
@@ -112,7 +112,7 @@ router.post("/batch", requireAuth, async (req, res, next) => {
       const challan = await Challan.create({
         ...data,
         challan_no: challanNo,
-        status: "draft",
+        status: "pending",
       });
       created.push(challan);
     }
@@ -149,7 +149,7 @@ router.delete("/:id", requireAuth, async (req, res, next) => {
     const c = await Challan.findById(req.params.id);
     if (!c) return res.status(404).json({ error: "Challan not found" });
     if (c.orderId) {
-      await Order.findByIdAndUpdate(c.orderId, { status: "PendingChallan" });
+      await Order.findByIdAndUpdate(c.orderId, { status: "draft" });
     }
     await Challan.findByIdAndDelete(req.params.id);
     res.json({ success: true });

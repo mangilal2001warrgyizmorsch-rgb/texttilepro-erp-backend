@@ -13,8 +13,8 @@ const accountSchema = new mongoose.Schema(
     panNo: { type: String },
     gstType: {
       type: String,
-      required: true,
       enum: ["Regular", "Composition"],
+      default: "Regular",
     },
     mobileNo: { type: String },
     email: { type: String },

@@ -51,20 +51,53 @@ async function ensureMasters(data, cache = {}) {
       masters.firmId = account._id;
     }
 
-    // 2. Party (Customer) - DO NOT AUTO CREATE
+    // 2. Party (Customer) - AUTO CREATE from PDF data if not found
     if (partyName) {
       const cleanName = partyName.trim();
       let account = await Account.findOne({ 
         accountName: { $regex: new RegExp(`^${escapeRegExp(cleanName)}$`, 'i') },
         roleType: { $in: ["Master", "Customer", "Supplier"] }
       });
-      if (account) {
-        masters.partyId = account._id;
-        masters.partyName = account.accountName;
-      } else {
-        masters.partyNotFound = true;
-        masters.partyName = cleanName; // Keep the name for display
+      if (!account) {
+        // Auto-create the party as a Customer with all available PDF details
+        const gstin = data.gstin || data.gstin_no || "";
+        const address = data.partyAddress || data.party_address || "";
+        
+        // Try to extract state/city from address
+        let state = "";
+        let city = "";
+        if (address) {
+          const parts = address.split(",").map(p => p.trim());
+          if (parts.length >= 2) {
+            city = parts[parts.length - 2] || "";
+            state = parts[parts.length - 1] || "";
+          }
+        }
+
+        // Extract PAN from GSTIN (characters 3-12)
+        let panNo = "";
+        if (gstin && gstin.length >= 12) {
+          panNo = gstin.substring(2, 12);
+        }
+
+        // Determine GST type from GSTIN
+        let gstType = "Regular";
+        
+        account = await Account.create({
+          accountName: cleanName,
+          roleType: "Customer",
+          gstin: gstin,
+          panNo: panNo,
+          gstType: gstType,
+          address: address,
+          city: city,
+          state: state,
+          isActive: true
+        });
+        console.log(`✅ Auto-created party account: ${cleanName}`);
       }
+      masters.partyId = account._id;
+      masters.partyName = account.accountName;
     }
 
     // 3. Weaver
