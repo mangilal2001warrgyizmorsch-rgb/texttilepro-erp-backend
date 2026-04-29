@@ -2,9 +2,67 @@ import { Router } from "express";
 import Order from "../models/Order.js";
 import Challan from "../models/Challan.js";
 import Lot from "../models/Lot.js";
+import Account from "../models/Account.js";
+import Quality from "../models/Quality.js";
+import Weaver from "../models/Weaver.js";
 import { requireAuth } from "../middleware/auth.js";
 
 const router = Router();
+
+// Helper to validate and enrich order data with master lookups
+async function enrichOrderData(data) {
+  const enriched = { ...data };
+
+  try {
+    // 1. Resolve Firm
+    if (!enriched.firmId && enriched.firmName) {
+      const firm = await Account.findOne({
+        accountName: { $regex: new RegExp(`^${enriched.firmName}$`, "i") },
+        roleType: "Mill",
+      });
+      if (firm) enriched.firmId = firm._id;
+    }
+
+    // 2. Resolve Party
+    if (!enriched.partyId && enriched.partyName) {
+      const party = await Account.findOne({
+        accountName: { $regex: new RegExp(`^${enriched.partyName}$`, "i") },
+        roleType: { $in: ["Master", "Customer", "Supplier"] },
+      });
+      if (party) enriched.partyId = party._id;
+    }
+
+    // 3. Resolve Quality
+    if (!enriched.qualityId && enriched.qualityName) {
+      const quality = await Quality.findOne({
+        qualityName: { $regex: new RegExp(`^${enriched.qualityName}$`, "i") },
+      });
+      if (quality) enriched.qualityId = quality._id;
+    }
+
+    // 4. Resolve Weaver
+    if (!enriched.weaverId && enriched.weaverName) {
+      const weaver = await Weaver.findOne({
+        weaverName: { $regex: new RegExp(`^${enriched.weaverName}$`, "i") },
+      });
+      if (weaver) enriched.weaverId = weaver._id;
+    }
+
+    // 5. Resolve Transporter
+    if (!enriched.transporterId && enriched.transporterName) {
+      const transporter = await Account.findOne({
+        accountName: { $regex: new RegExp(`^${enriched.transporterName}$`, "i") },
+        roleType: "Transporter",
+      });
+      if (transporter) enriched.transporterId = transporter._id;
+    }
+
+    return enriched;
+  } catch (err) {
+    console.error("Error enriching order data:", err);
+    return enriched; // Return original data if enrichment fails
+  }
+}
 
 // GET /api/orders
 router.get("/", requireAuth, async (req, res, next) => {
@@ -74,14 +132,42 @@ router.post("/batch", requireAuth, async (req, res, next) => {
     const results = [];
 
     for (const data of challans) {
-      // 1. Create Order with draft status
-      const order = await Order.create({
-        ...data,
-        status: "draft",
-      });
+      try {
+        // Enrich data with master lookups
+        const enrichedData = await enrichOrderData(data);
 
-      results.push({ order, message: "Order created successfully. Create challan to proceed." });
+        // Validate required fields
+        const requiredFields = ["firmId", "qualityName", "totalMeter"];
+        const missingFields = requiredFields.filter(
+          (field) => enrichedData[field] === undefined || enrichedData[field] === null || enrichedData[field] === ""
+        );
+
+        console.log(`📦 Creating order for ${enrichedData.firmName} with status: draft`);
+        const order = await Order.create({
+          ...enrichedData,
+          status: "draft",
+          ocrExtractedData: data.ocrExtractedData
+            ? JSON.stringify(data.ocrExtractedData)
+            : undefined,
+        });
+        console.log(`✅ Created Order ID: ${order._id}`);
+
+        results.push({
+          order,
+          message: "Order created successfully. Create challan to proceed.",
+          validationWarnings:
+            missingFields.length > 0 ? `Missing: ${missingFields.join(", ")}` : null,
+        });
+      } catch (itemErr) {
+        console.error("❌ Error creating individual order in batch:", itemErr);
+        results.push({
+          error: itemErr.message,
+          message: "Failed to create this order",
+          data: data,
+        });
+      }
     }
+    console.log(`🏁 Batch completed. Successfully processed ${results.filter(r => !r.error).length}/${challans.length} orders.`);
 
     res.status(201).json(results);
   } catch (err) {

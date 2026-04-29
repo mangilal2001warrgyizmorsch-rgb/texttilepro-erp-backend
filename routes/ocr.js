@@ -33,15 +33,27 @@ async function ensureMasters(data, cache = {}) {
     partyNotFound: false
   };
 
+  // Helper to normalize names for safer comparison
+  const normalize = (name) => 
+    name.toUpperCase().replace(/\./g, "").replace(/\s+/g, " ").trim();
+
   try {
     // 1. Internal Firm (Mill)
     if (firmName) {
       const cleanName = firmName.trim();
+      const normName = normalize(cleanName);
+      console.log(`🔍 Checking for Mill: ${cleanName} (norm: ${normName})`);
+      
       let account = await Account.findOne({ 
-        accountName: { $regex: new RegExp(`^${escapeRegExp(cleanName)}$`, 'i') },
+        $or: [
+          { accountName: { $regex: new RegExp(`^${escapeRegExp(cleanName)}$`, 'i') } },
+          { accountName: { $regex: new RegExp(`^${escapeRegExp(normName).split(" ").join("[\\s\\.]*")}[\\s\\.]*$`, 'i') } }
+        ],
         roleType: "Mill"
       });
+
       if (!account) {
+        console.log(`➕ Creating new Mill: ${cleanName}`);
         account = await Account.create({
           accountName: cleanName,
           roleType: "Mill",
@@ -51,19 +63,25 @@ async function ensureMasters(data, cache = {}) {
       masters.firmId = account._id;
     }
 
-    // 2. Party (Customer) - AUTO CREATE from PDF data if not found
+    // 2. Party (Customer)
     if (partyName) {
       const cleanName = partyName.trim();
+      const normName = normalize(cleanName);
+      console.log(`🔍 Checking for Party: ${cleanName} (norm: ${normName})`);
+
       let account = await Account.findOne({ 
-        accountName: { $regex: new RegExp(`^${escapeRegExp(cleanName)}$`, 'i') },
+        $or: [
+          { accountName: { $regex: new RegExp(`^${escapeRegExp(cleanName)}$`, 'i') } },
+          { accountName: { $regex: new RegExp(`^${escapeRegExp(normName).split(" ").join("[\\s\\.]*")}[\\s\\.]*$`, 'i') } }
+        ],
         roleType: { $in: ["Master", "Customer", "Supplier"] }
       });
+
       if (!account) {
-        // Auto-create the party as a Customer with all available PDF details
+        console.log(`➕ Creating new Party: ${cleanName}`);
         const gstin = data.gstin || data.gstin_no || "";
         const address = data.partyAddress || data.party_address || "";
         
-        // Try to extract state/city from address
         let state = "";
         let city = "";
         if (address) {
@@ -74,27 +92,22 @@ async function ensureMasters(data, cache = {}) {
           }
         }
 
-        // Extract PAN from GSTIN (characters 3-12)
         let panNo = "";
         if (gstin && gstin.length >= 12) {
           panNo = gstin.substring(2, 12);
         }
 
-        // Determine GST type from GSTIN
-        let gstType = "Regular";
-        
         account = await Account.create({
           accountName: cleanName,
           roleType: "Customer",
           gstin: gstin,
           panNo: panNo,
-          gstType: gstType,
+          gstType: "Regular",
           address: address,
           city: city,
           state: state,
           isActive: true
         });
-        console.log(`✅ Auto-created party account: ${cleanName}`);
       }
       masters.partyId = account._id;
       masters.partyName = account.accountName;
@@ -103,25 +116,36 @@ async function ensureMasters(data, cache = {}) {
     // 3. Weaver
     if (weaverName) {
       const cleanName = weaverName.trim();
+      const normName = normalize(cleanName);
+      console.log(`🔍 Checking for Weaver: ${cleanName}`);
+
       let weaver = await Weaver.findOne({ 
-        weaverName: { $regex: new RegExp(`^${escapeRegExp(cleanName)}$`, 'i') } 
+        $or: [
+          { weaverName: { $regex: new RegExp(`^${escapeRegExp(cleanName)}$`, 'i') } },
+          { weaverName: { $regex: new RegExp(`^${escapeRegExp(normName).split(" ").join("[\\s\\.]*")}[\\s\\.]*$`, 'i') } }
+        ]
       });
+
       if (!weaver) {
+        console.log(`➕ Creating new Weaver: ${cleanName}`);
         weaver = await Weaver.create({
           weaverName: cleanName,
           weaverCode: cleanName.substring(0, 3).toUpperCase() + Math.floor(Math.random() * 1000)
         });
       }
       masters.weaverId = weaver._id;
+      masters.weaverName = weaver.weaverName;
     }
 
     // 4. Quality
     if (qualityName) {
       const cleanName = qualityName.trim();
+      console.log(`🔍 Checking for Quality: ${cleanName}`);
       let quality = await Quality.findOne({ 
         qualityName: { $regex: new RegExp(`^${escapeRegExp(cleanName)}$`, 'i') } 
       });
       if (!quality) {
+        console.log(`➕ Creating new Quality: ${cleanName}`);
         quality = await Quality.create({
           qualityName: cleanName,
           processType: "Dyeing",
@@ -129,26 +153,32 @@ async function ensureMasters(data, cache = {}) {
         });
       }
       masters.qualityId = quality._id;
+      masters.qualityName = quality.qualityName;
     }
 
     // 5. Transporter
     if (transporterName) {
       const cleanName = transporterName.trim();
-      let transporter = await Account.findOne({ 
-        accountName: { $regex: new RegExp(`^${escapeRegExp(cleanName)}$`, 'i') },
-        roleType: "Transporter"
+      console.log(`🔍 Checking for Transporter: ${cleanName}`);
+      let transporter = await Account.findOne({
+        accountName: { $regex: new RegExp(`^${escapeRegExp(cleanName)}$`, "i") },
+        roleType: "Transporter",
       });
       if (!transporter) {
+        console.log(`➕ Creating new Transporter: ${cleanName}`);
         transporter = await Account.create({
           accountName: cleanName,
           roleType: "Transporter",
-          isActive: true
+          isActive: true,
         });
       }
       masters.transporterId = transporter._id;
+      masters.transporterName = transporter.accountName;
     }
+
+    console.log("✅ ensureMasters completed:", masters);
   } catch (err) {
-    console.error("❌ Error ensuring masters:", err);
+    console.error("❌ Error in ensureMasters:", err);
   }
 
   return masters;
@@ -205,12 +235,26 @@ router.post("/extract", requireAuth, upload.single("file"), async (req, res, nex
     const processedChallans = [];
     const masterCache = {}; // Local cache for this request to avoid redundant DB checks
     for (const c of data.challans) {
+      // Try multiple fields for firm/mill and party
+      const extractedFirm = c.delivery_at || c.firm || c.mill || c.firm_name || "";
+      const extractedParty = c.party || c.customer || c.party_name || "";
+      const extractedWeaver = c.weaver || c.weaver_name || "";
+
+      // Prevent saving Firm or Party names as Weaver names
+      let weaverName = extractedWeaver;
+      if (weaverName && 
+          (weaverName.toLowerCase() === extractedFirm.toLowerCase() || 
+           weaverName.toLowerCase() === extractedParty.toLowerCase())) {
+        console.log(`⚠️ Skipping Weaver creation: "${weaverName}" matches Firm or Party.`);
+        weaverName = "";
+      }
+
       const masters = await ensureMasters({
-        firmName: c.delivery_at, // Internal Mill (Destination)
-        partyName: c.party, // Customer (Buyer)
-        weaverName: c.firm || c.weaver, // Sender (Weaver)
+        firmName: extractedFirm,
+        partyName: extractedParty,
+        weaverName: weaverName,
         qualityName: c.quality,
-        transporterName: c.transpoter,
+        transporterName: c.transpoter || c.transporter,
         hsnCode: c.hsn_code
       }, masterCache);
       
