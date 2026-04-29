@@ -4,7 +4,6 @@ import Challan from "../models/Challan.js";
 import Lot from "../models/Lot.js";
 import Account from "../models/Account.js";
 import Quality from "../models/Quality.js";
-import Weaver from "../models/Weaver.js";
 import { requireAuth } from "../middleware/auth.js";
 
 const router = Router();
@@ -42,8 +41,9 @@ async function enrichOrderData(data) {
 
     // 4. Resolve Weaver
     if (!enriched.weaverId && enriched.weaverName) {
-      const weaver = await Weaver.findOne({
-        weaverName: { $regex: new RegExp(`^${enriched.weaverName}$`, "i") },
+      const weaver = await Account.findOne({
+        accountName: { $regex: new RegExp(`^${enriched.weaverName}$`, "i") },
+        roleType: "Weaver",
       });
       if (weaver) enriched.weaverId = weaver._id;
     }

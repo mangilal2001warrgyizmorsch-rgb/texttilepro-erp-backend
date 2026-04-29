@@ -26,7 +26,7 @@ const orderSchema = new mongoose.Schema(
     partyChallanNo: { type: String },
     marka: { type: String, required: true },
     // Weaver details
-    weaverId: { type: mongoose.Schema.Types.ObjectId, ref: "Weaver" },
+    weaverId: { type: mongoose.Schema.Types.ObjectId, ref: "Account" },
     weaverName: { type: String },
     weaverChNo: { type: String },
     weaverMarka: { type: String },

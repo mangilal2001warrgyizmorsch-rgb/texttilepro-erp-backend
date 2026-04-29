@@ -3,7 +3,6 @@ import { requireAuth } from "../middleware/auth.js";
 import multer from "multer";
 import Account from "../models/Account.js";
 import Quality from "../models/Quality.js";
-import Weaver from "../models/Weaver.js";
 
 const router = Router();
 const upload = multer({ limits: { fileSize: 15 * 1024 * 1024 } }); // 15MB limit
@@ -52,15 +51,11 @@ async function ensureMasters(data, cache = {}) {
         roleType: "Mill"
       });
 
-      if (!account) {
-        console.log(`➕ Creating new Mill: ${cleanName}`);
-        account = await Account.create({
-          accountName: cleanName,
-          roleType: "Mill",
-          isActive: true
-        });
+      if (account) {
+        masters.firmId = account._id;
+      } else {
+        console.log(`⚠️ Mill not found: ${cleanName}. Skipping auto-creation.`);
       }
-      masters.firmId = account._id;
     }
 
     // 2. Party (Customer)
@@ -77,40 +72,12 @@ async function ensureMasters(data, cache = {}) {
         roleType: { $in: ["Master", "Customer", "Supplier"] }
       });
 
-      if (!account) {
-        console.log(`➕ Creating new Party: ${cleanName}`);
-        const gstin = data.gstin || data.gstin_no || "";
-        const address = data.partyAddress || data.party_address || "";
-        
-        let state = "";
-        let city = "";
-        if (address) {
-          const parts = address.split(",").map(p => p.trim());
-          if (parts.length >= 2) {
-            city = parts[parts.length - 2] || "";
-            state = parts[parts.length - 1] || "";
-          }
-        }
-
-        let panNo = "";
-        if (gstin && gstin.length >= 12) {
-          panNo = gstin.substring(2, 12);
-        }
-
-        account = await Account.create({
-          accountName: cleanName,
-          roleType: "Customer",
-          gstin: gstin,
-          panNo: panNo,
-          gstType: "Regular",
-          address: address,
-          city: city,
-          state: state,
-          isActive: true
-        });
+      if (account) {
+        masters.partyId = account._id;
+        masters.partyName = account.accountName;
+      } else {
+        console.log(`⚠️ Party not found: ${cleanName}. Skipping auto-creation.`);
       }
-      masters.partyId = account._id;
-      masters.partyName = account.accountName;
     }
 
     // 3. Weaver
@@ -119,22 +86,20 @@ async function ensureMasters(data, cache = {}) {
       const normName = normalize(cleanName);
       console.log(`🔍 Checking for Weaver: ${cleanName}`);
 
-      let weaver = await Weaver.findOne({ 
+      let weaverAccount = await Account.findOne({ 
         $or: [
-          { weaverName: { $regex: new RegExp(`^${escapeRegExp(cleanName)}$`, 'i') } },
-          { weaverName: { $regex: new RegExp(`^${escapeRegExp(normName).split(" ").join("[\\s\\.]*")}[\\s\\.]*$`, 'i') } }
-        ]
+          { accountName: { $regex: new RegExp(`^${escapeRegExp(cleanName)}$`, 'i') } },
+          { accountName: { $regex: new RegExp(`^${escapeRegExp(normName).split(" ").join("[\\s\\.]*")}[\\s\\.]*$`, 'i') } }
+        ],
+        roleType: "Weaver"
       });
 
-      if (!weaver) {
-        console.log(`➕ Creating new Weaver: ${cleanName}`);
-        weaver = await Weaver.create({
-          weaverName: cleanName,
-          weaverCode: cleanName.substring(0, 3).toUpperCase() + Math.floor(Math.random() * 1000)
-        });
+      if (weaverAccount) {
+        masters.weaverId = weaverAccount._id;
+        masters.weaverName = weaverAccount.accountName;
+      } else {
+        console.log(`⚠️ Weaver not found: ${cleanName}. Skipping auto-creation.`);
       }
-      masters.weaverId = weaver._id;
-      masters.weaverName = weaver.weaverName;
     }
 
     // 4. Quality
@@ -144,16 +109,12 @@ async function ensureMasters(data, cache = {}) {
       let quality = await Quality.findOne({ 
         qualityName: { $regex: new RegExp(`^${escapeRegExp(cleanName)}$`, 'i') } 
       });
-      if (!quality) {
-        console.log(`➕ Creating new Quality: ${cleanName}`);
-        quality = await Quality.create({
-          qualityName: cleanName,
-          processType: "Dyeing",
-          hsnCode: hsnCode || undefined
-        });
+      if (quality) {
+        masters.qualityId = quality._id;
+        masters.qualityName = quality.qualityName;
+      } else {
+        console.log(`⚠️ Quality not found: ${cleanName}. Skipping auto-creation.`);
       }
-      masters.qualityId = quality._id;
-      masters.qualityName = quality.qualityName;
     }
 
     // 5. Transporter
@@ -164,16 +125,12 @@ async function ensureMasters(data, cache = {}) {
         accountName: { $regex: new RegExp(`^${escapeRegExp(cleanName)}$`, "i") },
         roleType: "Transporter",
       });
-      if (!transporter) {
-        console.log(`➕ Creating new Transporter: ${cleanName}`);
-        transporter = await Account.create({
-          accountName: cleanName,
-          roleType: "Transporter",
-          isActive: true,
-        });
+      if (transporter) {
+        masters.transporterId = transporter._id;
+        masters.transporterName = transporter.accountName;
+      } else {
+        console.log(`⚠️ Transporter not found: ${cleanName}. Skipping auto-creation.`);
       }
-      masters.transporterId = transporter._id;
-      masters.transporterName = transporter.accountName;
     }
 
     console.log("✅ ensureMasters completed:", masters);
