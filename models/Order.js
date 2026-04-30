@@ -2,7 +2,7 @@ import mongoose from "mongoose";
 
 const takaDetailSchema = new mongoose.Schema(
   {
-    takaNo: { type: String, required: true },
+    takaNo: { type: String },
     marka: { type: String },
     meter: { type: Number, required: true },
     weight: { type: Number },
@@ -24,10 +24,15 @@ const orderSchema = new mongoose.Schema(
     partyId: { type: mongoose.Schema.Types.ObjectId, ref: "Account" },
     partyName: { type: String },
     partyChallanNo: { type: String },
+    partyGstin: { type: String },
+    partyAddress: { type: String },
+    brokerName: { type: String },
     marka: { type: String, required: true },
     // Weaver details
     weaverId: { type: mongoose.Schema.Types.ObjectId, ref: "Account" },
     weaverName: { type: String },
+    weaverGstin: { type: String },
+    weaverAddress: { type: String },
     weaverChNo: { type: String },
     weaverMarka: { type: String },
     weaverChDate: { type: String },

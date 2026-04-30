@@ -68,7 +68,14 @@ async function enrichOrderData(data) {
 router.get("/", requireAuth, async (req, res, next) => {
   try {
     const filter = {};
-    if (req.query.status) filter.status = req.query.status;
+    if (req.query.status) {
+      const statusQuery = String(req.query.status);
+      if (statusQuery.includes(",")) {
+        filter.status = { $in: statusQuery.split(",").map((item) => item.trim()).filter(Boolean) };
+      } else {
+        filter.status = statusQuery;
+      }
+    }
     const orders = await Order.find(filter).sort({ createdAt: -1 });
     res.json(orders);
   } catch (err) {

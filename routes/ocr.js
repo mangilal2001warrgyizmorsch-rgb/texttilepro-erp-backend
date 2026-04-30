@@ -18,6 +18,8 @@ async function ensureMasters(data, cache = {}) {
     firmName, // The internal firm (Delivery At)
     partyName, // The customer (M/s Party)
     weaverName, // The sender (Header)
+    partyGstin, // GST from party_obj
+    weaverGstin, // GST from weaver_obj
     qualityName,
     transporterName,
     hsnCode 
@@ -29,12 +31,18 @@ async function ensureMasters(data, cache = {}) {
     weaverId: null,
     qualityId: null,
     transporterId: null,
-    partyNotFound: false
+    partyNotFound: false,
+    weaverNotFound: false,
+    partyMatchedBy: null, // 'gstin' or 'name'
+    weaverMatchedBy: null,
   };
 
   // Helper to normalize names for safer comparison
   const normalize = (name) => 
     name.toUpperCase().replace(/\./g, "").replace(/\s+/g, " ").trim();
+
+  // Helper to clean GST numbers (remove OCR noise, trim, uppercase)
+  const cleanGST = (gst) => (gst || "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
 
   try {
     // 1. Internal Firm (Mill)
@@ -58,11 +66,30 @@ async function ensureMasters(data, cache = {}) {
       }
     }
 
-    // 2. Party (Customer)
-    if (partyName) {
+    // 2. Party (Customer) — GSTIN first, then name fallback
+    const partyGstClean = cleanGST(partyGstin);
+    if (partyGstClean && partyGstClean.length >= 15) {
+      console.log(`🔍 Matching Party by GSTIN: ${partyGstClean}`);
+      const account = await Account.findOne({
+        gstin: { $regex: new RegExp(`^${escapeRegExp(partyGstClean)}$`, 'i') },
+        roleType: { $in: ["Master", "Customer", "Supplier"] }
+      });
+      if (account) {
+        masters.partyId = account._id;
+        masters.partyName = account.accountName;
+        masters.partyMatchedBy = "gstin";
+        console.log(`✅ Party matched by GSTIN: ${account.accountName}`);
+      } else {
+        console.log(`⚠️ No Party found with GSTIN: ${partyGstClean}`);
+        masters.partyNotFound = true;
+      }
+    }
+    
+    // Name-based fallback only if GSTIN match failed
+    if (!masters.partyId && partyName) {
       const cleanName = partyName.trim();
       const normName = normalize(cleanName);
-      console.log(`🔍 Checking for Party: ${cleanName} (norm: ${normName})`);
+      console.log(`🔍 Falling back to Party name match: ${cleanName}`);
 
       let account = await Account.findOne({ 
         $or: [
@@ -75,16 +102,37 @@ async function ensureMasters(data, cache = {}) {
       if (account) {
         masters.partyId = account._id;
         masters.partyName = account.accountName;
+        masters.partyMatchedBy = "name";
       } else {
-        console.log(`⚠️ Party not found: ${cleanName}. Skipping auto-creation.`);
+        console.log(`⚠️ Party not found by name: ${cleanName}.`);
+        masters.partyNotFound = true;
       }
     }
 
-    // 3. Weaver
-    if (weaverName) {
+    // 3. Weaver — GSTIN first, then name fallback
+    const weaverGstClean = cleanGST(weaverGstin);
+    if (weaverGstClean && weaverGstClean.length >= 15) {
+      console.log(`🔍 Matching Weaver by GSTIN: ${weaverGstClean}`);
+      const weaverAccount = await Account.findOne({
+        gstin: { $regex: new RegExp(`^${escapeRegExp(weaverGstClean)}$`, 'i') },
+        roleType: "Weaver"
+      });
+      if (weaverAccount) {
+        masters.weaverId = weaverAccount._id;
+        masters.weaverName = weaverAccount.accountName;
+        masters.weaverMatchedBy = "gstin";
+        console.log(`✅ Weaver matched by GSTIN: ${weaverAccount.accountName}`);
+      } else {
+        console.log(`⚠️ No Weaver found with GSTIN: ${weaverGstClean}`);
+        masters.weaverNotFound = true;
+      }
+    }
+
+    // Name-based fallback only if GSTIN match failed
+    if (!masters.weaverId && weaverName) {
       const cleanName = weaverName.trim();
       const normName = normalize(cleanName);
-      console.log(`🔍 Checking for Weaver: ${cleanName}`);
+      console.log(`🔍 Falling back to Weaver name match: ${cleanName}`);
 
       let weaverAccount = await Account.findOne({ 
         $or: [
@@ -97,8 +145,10 @@ async function ensureMasters(data, cache = {}) {
       if (weaverAccount) {
         masters.weaverId = weaverAccount._id;
         masters.weaverName = weaverAccount.accountName;
+        masters.weaverMatchedBy = "name";
       } else {
-        console.log(`⚠️ Weaver not found: ${cleanName}. Skipping auto-creation.`);
+        console.log(`⚠️ Weaver not found by name: ${cleanName}.`);
+        masters.weaverNotFound = true;
       }
     }
 
@@ -151,35 +201,60 @@ router.post("/extract", requireAuth, upload.single("file"), async (req, res, nex
 
     console.log(`🔍 Forwarding file ${file.originalname} to external OCR API...`);
 
-    // Prepare FormData for the external API
-    const externalFormData = new FormData();
-    const blob = new Blob([file.buffer], { type: file.mimetype });
-    externalFormData.append("file", blob, file.originalname);
-
-    // Call the user's preferred API with a timeout
+    // Timeout for the entire OCR operation (including retries)
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 60000); // 60s timeout
+    const timeoutId = setTimeout(() => controller.abort(), 120000); // 120s total for retries
 
-    let externalResponse;
-    try {
-      externalResponse = await fetch("https://challan-extractor.onrender.com/extract", {
-        method: "POST",
-        body: externalFormData,
-        signal: controller.signal,
-        headers: {
-          'Accept': 'application/json',
-          'User-Agent': 'TextilePro-ERP-Backend'
+    // Helper: call external OCR with retry on failure (Render free tier cold start)
+    const callExternalOcr = async (signal) => {
+      const OCR_URL = "https://challan-extractor.onrender.com/extract";
+      const MAX_RETRIES = 2;
+
+      for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+        try {
+          console.log(`🔍 OCR attempt ${attempt}/${MAX_RETRIES}...`);
+          
+          // Must re-create FormData for retry (stream consumed after first attempt)
+          const retryFormData = new FormData();
+          const retryBlob = new Blob([file.buffer], { type: file.mimetype });
+          retryFormData.append("file", retryBlob, file.originalname);
+
+          const response = await fetch(OCR_URL, {
+            method: "POST",
+            body: retryFormData,
+            signal,
+            headers: {
+              'Accept': 'application/json',
+              'User-Agent': 'TextilePro-ERP-Backend'
+            }
+          });
+
+          if (response.ok) {
+            return response;
+          }
+
+          const errorText = await response.text();
+          console.error(`❌ OCR attempt ${attempt} failed: ${response.status} - ${errorText}`);
+
+          // If it's the last attempt, throw
+          if (attempt === MAX_RETRIES) {
+            throw new Error(`External OCR API failed after ${MAX_RETRIES} attempts (status: ${response.status}). The OCR service may be temporarily unavailable — please try again in a few seconds.`);
+          }
+
+          // Wait before retry (Render cold start takes ~3-5s)
+          console.log(`⏳ Waiting 3s before retry...`);
+          await new Promise(r => setTimeout(r, 3000));
+        } catch (err) {
+          if (err.name === 'AbortError') throw err;
+          if (attempt === MAX_RETRIES) throw err;
+          console.log(`⏳ Attempt ${attempt} error: ${err.message}. Retrying in 3s...`);
+          await new Promise(r => setTimeout(r, 3000));
         }
-      });
-    } finally {
-      clearTimeout(timeoutId);
-    }
+      }
+    };
 
-    if (!externalResponse.ok) {
-      const errorText = await externalResponse.text();
-      console.error(`❌ External OCR API Error: ${externalResponse.status} - ${errorText}`);
-      throw new Error(`External OCR API failed: ${externalResponse.status}`);
-    }
+    const externalResponse = await callExternalOcr(controller.signal);
+    clearTimeout(timeoutId);
 
     const data = await externalResponse.json();
     
@@ -188,21 +263,25 @@ router.post("/extract", requireAuth, upload.single("file"), async (req, res, nex
        return res.json(data); 
     }
 
-    // Process each challan sequentially to avoid duplicate master creation if multiple challans have same Mill/Quality
+    // Process each challan sequentially
     const processedChallans = [];
-    const masterCache = {}; // Local cache for this request to avoid redundant DB checks
+    const masterCache = {};
     for (const c of data.challans) {
       // Try multiple fields for firm/mill and party
       const extractedFirm = c.delivery_at || c.firm || c.mill || c.firm_name || "";
       const extractedParty = c.party || c.customer || c.party_name || "";
       const extractedWeaver = c.weaver || c.weaver_name || "";
 
+      // Extract GSTIN from _obj fields (OCR extractor provides these)
+      const partyGstin = c.party_obj?.gstin_no || c.gstin_no || "";
+      const weaverGstin = c.weaver_obj?.gstin_no || "";
+
       // Prevent saving Firm or Party names as Weaver names
       let weaverName = extractedWeaver;
       if (weaverName && 
           (weaverName.toLowerCase() === extractedFirm.toLowerCase() || 
            weaverName.toLowerCase() === extractedParty.toLowerCase())) {
-        console.log(`⚠️ Skipping Weaver creation: "${weaverName}" matches Firm or Party.`);
+        console.log(`⚠️ Skipping Weaver name match: "${weaverName}" matches Firm or Party.`);
         weaverName = "";
       }
 
@@ -210,6 +289,8 @@ router.post("/extract", requireAuth, upload.single("file"), async (req, res, nex
         firmName: extractedFirm,
         partyName: extractedParty,
         weaverName: weaverName,
+        partyGstin: partyGstin,
+        weaverGstin: weaverGstin,
         qualityName: c.quality,
         transporterName: c.transpoter || c.transporter,
         hsnCode: c.hsn_code
