@@ -3,9 +3,25 @@ import { requireAuth } from "../middleware/auth.js";
 import multer from "multer";
 import Account from "../models/Account.js";
 import Quality from "../models/Quality.js";
+import fs from "fs";
+import path from "path";
+
+const UPLOADS_DIR = "uploads/documents";
+if (!fs.existsSync(UPLOADS_DIR)) {
+  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+}
 
 const router = Router();
-const upload = multer({ limits: { fileSize: 15 * 1024 * 1024 } }); // 15MB limit
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, UPLOADS_DIR);
+  },
+  filename: function (req, file, cb) {
+    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+    cb(null, file.fieldname + "-" + uniqueSuffix + path.extname(file.originalname));
+  }
+});
+const upload = multer({ storage: storage, limits: { fileSize: 15 * 1024 * 1024 } }); // 15MB limit
 
 // Helper to escape regex special characters
 function escapeRegExp(string) {
@@ -192,6 +208,7 @@ async function ensureMasters(data, cache = {}) {
     }
 
     // ── 4. QUALITY — Name-based match, return full snapshot ────────────────
+    masters.hsnCode = hsnCode || null;
     if (qualityName) {
       const cleanName = qualityName.trim();
       console.log(`🔍 Checking for Quality: ${cleanName}`);
@@ -201,6 +218,7 @@ async function ensureMasters(data, cache = {}) {
       if (quality) {
         masters.qualityId = quality._id;
         masters.qualityName = quality.qualityName;
+        masters.hsnCode = quality.hsnCode || masters.hsnCode; // Master HSN takes priority
         masters.qualityDetails = {
           qualityName: quality.qualityName,
           gsm: quality.gsm || null,
@@ -217,6 +235,7 @@ async function ensureMasters(data, cache = {}) {
         console.log(`✅ Quality matched: ${quality.qualityName} (GSM: ${quality.gsm}, Width: ${quality.width})`);
       } else {
         console.log(`⚠️ Quality not found: ${cleanName}. Using OCR data as fallback.`);
+        masters.qualityName = cleanName;
       }
     }
 
@@ -260,6 +279,9 @@ router.post("/extract", requireAuth, upload.single("file"), async (req, res, nex
       return res.status(400).json({ error: "No file provided" });
     }
 
+    const fileUrl = `/uploads/documents/${file.filename}`;
+    const filePath = file.path;
+
     console.log(`🔍 Forwarding file ${file.originalname} to external OCR API...`);
 
     // Timeout for the entire OCR operation (including retries)
@@ -269,20 +291,17 @@ router.post("/extract", requireAuth, upload.single("file"), async (req, res, nex
     // Helper: call external OCR with retry on failure (Render free tier cold start)
     const callExternalOcr = async (signal) => {
       const OCR_URL = "https://challan-extractor2.onrender.com/extract";
-      const MAX_RETRIES = 2;
-
+      const MAX_RETRIES = 3;
       for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
         try {
-          console.log(`🔍 OCR attempt ${attempt}/${MAX_RETRIES}...`);
-
-          // Must re-create FormData for retry (stream consumed after first attempt)
-          const retryFormData = new FormData();
-          const retryBlob = new Blob([file.buffer], { type: file.mimetype });
-          retryFormData.append("file", retryBlob, file.originalname);
+          const formData = new FormData();
+          const fileData = fs.readFileSync(filePath);
+          const blob = new Blob([fileData], { type: "application/pdf" });
+          formData.append("file", blob, file.originalname);
 
           const response = await fetch(OCR_URL, {
             method: "POST",
-            body: retryFormData,
+            body: formData,
             signal,
             headers: {
               'Accept': 'application/json',
@@ -366,6 +385,7 @@ router.post("/extract", requireAuth, upload.single("file"), async (req, res, nex
     // Return the processed batch
     res.json({
       ...data,
+      fileUrl,
       challans: processedChallans
     });
 

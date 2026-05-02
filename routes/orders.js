@@ -4,6 +4,7 @@ import Challan from "../models/Challan.js";
 import Lot from "../models/Lot.js";
 import Account from "../models/Account.js";
 import Quality from "../models/Quality.js";
+import CodeMaster from "../models/CodeMaster.js";
 import { requireAuth } from "../middleware/auth.js";
 
 const router = Router();
@@ -213,7 +214,7 @@ router.get("/", requireAuth, async (req, res, next) => {
         filter.status = statusQuery;
       }
     }
-    const orders = await Order.find(filter).sort({ createdAt: -1 });
+    const orders = await Order.find(filter).populate("codeMasterId", "masterName").sort({ createdAt: -1 });
     res.json(orders);
   } catch (err) {
     next(err);

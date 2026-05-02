@@ -65,6 +65,7 @@ const orderSchema = new mongoose.Schema(
     partyAddress: { type: String },
     partyDetails: masterDetailSchema,
     brokerName: { type: String },
+    codeMasterId: { type: mongoose.Schema.Types.ObjectId, ref: "CodeMaster" },
     marka: { type: String, required: true },
     // Weaver details
     weaverId: { type: mongoose.Schema.Types.ObjectId, ref: "Account" },
@@ -84,7 +85,7 @@ const orderSchema = new mongoose.Schema(
     weight: { type: Number },
     length: { type: Number },
     width: { type: Number },
-    chadti: { type: Number },
+    chadhti: { type: Number },
     totalTaka: { type: Number, required: true },
     totalMeter: { type: Number, required: true },
     jobRate: { type: Number },
