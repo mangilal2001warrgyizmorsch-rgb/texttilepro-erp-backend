@@ -12,6 +12,42 @@ const takaDetailSchema = new mongoose.Schema(
   { _id: false }
 );
 
+// Embedded snapshot of master record at order creation time
+const masterDetailSchema = new mongoose.Schema(
+  {
+    name: { type: String },
+    gstin: { type: String },
+    panNo: { type: String },
+    address: { type: String },
+    city: { type: String },
+    state: { type: String },
+    pincode: { type: String },
+    mobileNo: { type: String },
+    email: { type: String },
+    gstType: { type: String },
+    clientCode: { type: String },
+  },
+  { _id: false }
+);
+
+// Embedded snapshot of quality master record
+const qualityDetailSchema = new mongoose.Schema(
+  {
+    qualityName: { type: String },
+    gsm: { type: Number },
+    width: { type: Number },
+    unit: { type: String },
+    hsnCode: { type: String },
+    processType: { type: String },
+    expectedLossPercent: { type: Number },
+    shortPercent: { type: Number },
+    defaultJobRate: { type: Number },
+    greyRate: { type: Number },
+    dispatchRate: { type: Number },
+  },
+  { _id: false }
+);
+
 const orderSchema = new mongoose.Schema(
   {
     orderDate: { type: String, required: true },
@@ -21,11 +57,13 @@ const orderSchema = new mongoose.Schema(
       required: true,
     },
     firmName: { type: String, required: true },
+    firmDetails: masterDetailSchema,
     partyId: { type: mongoose.Schema.Types.ObjectId, ref: "Account" },
     partyName: { type: String },
     partyChallanNo: { type: String },
     partyGstin: { type: String },
     partyAddress: { type: String },
+    partyDetails: masterDetailSchema,
     brokerName: { type: String },
     marka: { type: String, required: true },
     // Weaver details
@@ -33,12 +71,16 @@ const orderSchema = new mongoose.Schema(
     weaverName: { type: String },
     weaverGstin: { type: String },
     weaverAddress: { type: String },
+    weaverDetails: masterDetailSchema,
     weaverChNo: { type: String },
     weaverMarka: { type: String },
     weaverChDate: { type: String },
     // Fabric
     qualityId: { type: mongoose.Schema.Types.ObjectId, ref: "Quality" },
     qualityName: { type: String, required: true },
+    qualityDetails: qualityDetailSchema,
+    hsnCode: { type: String },
+    itemDescription: { type: String },
     weight: { type: Number },
     length: { type: Number },
     width: { type: Number },

@@ -3,10 +3,12 @@ import mongoose from "mongoose";
 const qualitySchema = new mongoose.Schema(
   {
     qualityName: { type: String, required: true },
+    normalizedName: { type: String, index: true },
     gsm: { type: Number },
     width: { type: Number },
     unit: { type: String },
     hsnCode: { type: String },
+    itemDescription: { type: String },
     processType: {
       type: String,
       required: true,

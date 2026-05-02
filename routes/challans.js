@@ -84,13 +84,23 @@ router.get("/:id", requireAuth, async (req, res, next) => {
 router.post("/", requireAuth, async (req, res, next) => {
   try {
     const challanNo = await generateChallanNo();
+    const body = { ...req.body };
+
+    // Sanitize empty ObjectId strings to prevent Mongoose cast errors
+    const objectIdFields = ["firmId", "partyId", "qualityId", "weaverId", "transporterId", "orderId"];
+    objectIdFields.forEach((field) => {
+      if (body[field] === "" || body[field] === undefined) {
+        delete body[field];
+      }
+    });
+
     const challan = await Challan.create({ 
-      ...req.body, 
+      ...body, 
       challan_no: challanNo, 
       status: "pending" 
     });
-    if (req.body.orderId) {
-      await Order.findByIdAndUpdate(req.body.orderId, { status: "PendingChallan" });
+    if (body.orderId) {
+      await Order.findByIdAndUpdate(body.orderId, { status: "PendingChallan" });
     }
     res.status(201).json(challan);
   } catch (err) {
