@@ -26,7 +26,7 @@ router.get("/", requireAuth, async (req, res, next) => {
   try {
     const filter = {};
     if (req.query.status) filter.status = req.query.status;
-    res.json(await Lot.find(filter).sort({ createdAt: -1 }));
+    res.json(await Lot.find(filter).sort({ createdAt: -1 }).populate("challanId"));
   } catch (err) {
     next(err);
   }

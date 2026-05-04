@@ -20,6 +20,7 @@ import jobCardRoutes from "./routes/jobCards.js";
 import dispatchRoutes from "./routes/dispatches.js";
 import billRoutes from "./routes/bills.js";
 import ocrRoutes from "./routes/ocr.js";
+import vehicleRoutes from "./routes/vehicles.js";
 
 const app = express();
 const PORT = process.env.PORT || 5500;
@@ -46,6 +47,7 @@ app.use("/api/job-cards", jobCardRoutes);
 app.use("/api/dispatches", dispatchRoutes);
 app.use("/api/bills", billRoutes);
 app.use("/api/ocr", ocrRoutes);
+app.use("/api/vehicles", vehicleRoutes);
 
 // Health check
 app.get("/api/health", (req, res) => {

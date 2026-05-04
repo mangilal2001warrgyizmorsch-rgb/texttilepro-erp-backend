@@ -21,9 +21,12 @@ const lotSchema = new mongoose.Schema(
     partyName: { type: String, required: true },
     marka: { type: String, required: true },
     qualityName: { type: String, required: true },
+    challanNo: { type: String },
+    challanDate: { type: Date },
     totalTaka: { type: Number, required: true },
     totalMeter: { type: Number, required: true },
     balanceMeter: { type: Number, required: true },
+    amount: { type: Number },
     locationId: { type: mongoose.Schema.Types.ObjectId, ref: "Location" },
     locationName: { type: String },
     status: {

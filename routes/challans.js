@@ -92,8 +92,8 @@ router.get("/:id", requireAuth, async (req, res, next) => {
 // Single challan creation
 router.post("/", requireAuth, async (req, res, next) => {
   try {
-    const challanNo = await generateChallanNo();
     const body = { ...req.body };
+    const challanNo = body.challan_no || (await generateChallanNo());
 
     // Sanitize empty ObjectId strings to prevent Mongoose cast errors
     const objectIdFields = ["firmId", "partyId", "qualityId", "weaverId", "transporterId", "orderId"];
@@ -127,7 +127,7 @@ router.post("/batch", requireAuth, async (req, res, next) => {
 
     const created = [];
     for (const data of challans) {
-      const challanNo = await generateChallanNo();
+      const challanNo = data.challan_no || (await generateChallanNo());
       const challan = await Challan.create({
         ...data,
         challan_no: challanNo,

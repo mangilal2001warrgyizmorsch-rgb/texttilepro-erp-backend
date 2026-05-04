@@ -5,6 +5,7 @@ import Lot from "../models/Lot.js";
 import Account from "../models/Account.js";
 import Quality from "../models/Quality.js";
 import CodeMaster from "../models/CodeMaster.js";
+import Vehicle from "../models/Vehicle.js";
 import { requireAuth } from "../middleware/auth.js";
 
 const router = Router();
@@ -179,15 +180,44 @@ async function enrichOrderData(data) {
       }
     }
 
-    // 5. Resolve Transporter
+    // 5. Resolve Transporter — auto-create if new name provided
     if (!enriched.transporterId && enriched.transporterName) {
-      const transporter = await Account.findOne({
+      let transporter = await Account.findOne({
         accountName: {
           $regex: new RegExp(`^${enriched.transporterName}$`, "i"),
         },
         roleType: "Transporter",
       });
-      if (transporter) enriched.transporterId = transporter._id;
+      if (transporter) {
+        enriched.transporterId = transporter._id;
+      } else {
+        // Auto-create new transporter in Account Master
+        console.log(`🚛 Auto-creating Transporter: "${enriched.transporterName}"`);
+        transporter = await Account.create({
+          accountName: enriched.transporterName.trim(),
+          roleType: "Transporter",
+          isActive: true,
+        });
+        enriched.transporterId = transporter._id;
+      }
+    }
+
+    // 6. Auto-save Vehicle Number to Vehicle Master
+    if (enriched.vehicleNo) {
+      try {
+        await Vehicle.findOneAndUpdate(
+          { vehicleNo: enriched.vehicleNo.toUpperCase().trim() },
+          {
+            vehicleNo: enriched.vehicleNo.toUpperCase().trim(),
+            transporterId: enriched.transporterId || undefined,
+            transporterName: enriched.transporterName || undefined,
+            driverMobile: enriched.driverMobile || undefined,
+          },
+          { upsert: true, new: true }
+        );
+      } catch (vErr) {
+        console.error("Vehicle auto-save failed:", vErr.message);
+      }
     }
 
     return enriched;
