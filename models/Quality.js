@@ -14,6 +14,11 @@ const qualitySchema = new mongoose.Schema(
       required: true,
       enum: ["Dyeing", "Printing", "Both"],
     },
+    department: {
+      type: String,
+      enum: ["General", "Col Store", "Spare Parts", "Grey", "Others"],
+      default: "General",
+    },
     expectedLossPercent: { type: Number },
     shortPercent: { type: Number },
     defaultJobRate: { type: Number },

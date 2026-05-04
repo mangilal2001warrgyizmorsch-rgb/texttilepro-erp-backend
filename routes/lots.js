@@ -6,27 +6,40 @@ import { requireAuth } from "../middleware/auth.js";
 
 const router = Router();
 
-async function generateLotNo() {
-  const today = new Date();
-  const dateStr =
-    today.getFullYear().toString() +
-    (today.getMonth() + 1).toString().padStart(2, "0") +
-    today.getDate().toString().padStart(2, "0");
-  const last = await Lot.findOne().sort({ createdAt: -1 });
-  let seq = 1;
-  if (last) {
-    const parts = last.lotNo.split("-");
-    const lastSeq = parseInt(parts[parts.length - 1] || "0", 10);
-    if (!isNaN(lastSeq)) seq = lastSeq + 1;
+function getFinancialYear(date) {
+  const year = date.getFullYear();
+  const month = date.getMonth() + 1;
+  if (month >= 4) {
+    return { startYear: year, endYear: year + 1, suffix: (year + 1).toString().slice(-2) };
+  } else {
+    return { startYear: year - 1, endYear: year, suffix: year.toString().slice(-2) };
   }
-  return `LOT-${dateStr}-${seq.toString().padStart(4, "0")}`;
+}
+
+async function generateLotNo() {
+  const fy = getFinancialYear(new Date());
+  const fyStartDate = new Date(fy.startYear, 3, 1); // April 1st
+  
+  const lastLot = await Lot.findOne({
+    createdAt: { $gte: fyStartDate }
+  }).sort({ createdAt: -1 });
+  
+  let serial = 1;
+  if (lastLot && lastLot.lotNo.includes("/")) {
+    const parts = lastLot.lotNo.split("/");
+    const lastSerial = parseInt(parts[0], 10);
+    if (!isNaN(lastSerial)) serial = lastSerial + 1;
+  }
+  
+  const serialStr = serial < 10 ? `0${serial}` : serial.toString();
+  return `${serialStr}/${fy.suffix}`;
 }
 
 router.get("/", requireAuth, async (req, res, next) => {
   try {
     const filter = {};
     if (req.query.status) filter.status = req.query.status;
-    res.json(await Lot.find(filter).sort({ createdAt: -1 }).populate("challanId"));
+    res.json(await Lot.find(filter).sort({ createdAt: -1 }));
   } catch (err) {
     next(err);
   }
@@ -54,7 +67,7 @@ router.get("/:id", requireAuth, async (req, res, next) => {
 
 router.post("/", requireAuth, async (req, res, next) => {
   try {
-    const order = await Order.findById(req.body.orderId);
+    const order = await Order.findById(req.body.orderId).populate("codeMasterId");
     if (!order) return res.status(404).json({ error: "Order not found" });
 
     // Verify challan exists and is in correct status
@@ -68,9 +81,14 @@ router.post("/", requireAuth, async (req, res, next) => {
     const lotNo = await generateLotNo();
     const lotData = {
       ...req.body,
-      qualityName: req.body.qualityName || order.qualityName,
+      partyName: order.partyName,
+      masterName: order.codeMasterId?.masterName || order.brokerName || "",
+      marka: order.marka,
+      qualityName: order.qualityName,
+      totalTaka: order.totalTaka,
+      totalMeter: order.totalMeter,
       lotNo,
-      balanceMeter: req.body.totalMeter,
+      balanceMeter: order.totalMeter,
       status: "InStorage",
     };
 

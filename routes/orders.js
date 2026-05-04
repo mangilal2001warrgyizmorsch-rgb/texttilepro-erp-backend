@@ -56,11 +56,21 @@ async function enrichOrderData(data) {
         enriched.firmName = enriched.firmName || firm.accountName;
       }
     } else if (!enriched.firmId && enriched.firmName) {
-      const firm = await Account.findOne({
-        accountName: { $regex: new RegExp(`^${enriched.firmName}$`, "i") },
+      let firm = await Account.findOne({
+        accountName: { $regex: new RegExp(`^${enriched.firmName.trim()}$`, "i") },
         roleType: "Mill",
       });
       if (firm) {
+        enriched.firmId = firm._id;
+        enriched.firmDetails = buildMasterSnapshot(firm);
+      } else {
+        // Auto-create Firm master
+        console.log(`📋 Auto-creating Firm master: "${enriched.firmName}"`);
+        firm = await Account.create({
+          accountName: enriched.firmName.trim(),
+          roleType: "Mill",
+          isActive: true,
+        });
         enriched.firmId = firm._id;
         enriched.firmDetails = buildMasterSnapshot(firm);
       }
@@ -76,8 +86,8 @@ async function enrichOrderData(data) {
         enriched.partyAddress = enriched.partyAddress || party.address || "";
       }
     } else if (!enriched.partyId && enriched.partyName) {
-      const party = await Account.findOne({
-        accountName: { $regex: new RegExp(`^${enriched.partyName}$`, "i") },
+      let party = await Account.findOne({
+        accountName: { $regex: new RegExp(`^${enriched.partyName.trim()}$`, "i") },
         roleType: { $in: ["Master", "Customer", "Supplier"] },
       });
       if (party) {
@@ -85,6 +95,18 @@ async function enrichOrderData(data) {
         enriched.partyDetails = buildMasterSnapshot(party);
         enriched.partyGstin = enriched.partyGstin || party.gstin || "";
         enriched.partyAddress = enriched.partyAddress || party.address || "";
+      } else {
+        // Auto-create Party master
+        console.log(`📋 Auto-creating Party master: "${enriched.partyName}"`);
+        party = await Account.create({
+          accountName: enriched.partyName.trim(),
+          roleType: "Customer",
+          gstin: enriched.partyGstin || "",
+          address: enriched.partyAddress || "",
+          isActive: true,
+        });
+        enriched.partyId = party._id;
+        enriched.partyDetails = buildMasterSnapshot(party);
       }
     }
 
@@ -168,8 +190,8 @@ async function enrichOrderData(data) {
         enriched.weaverAddress = enriched.weaverAddress || weaver.address || "";
       }
     } else if (!enriched.weaverId && enriched.weaverName) {
-      const weaver = await Account.findOne({
-        accountName: { $regex: new RegExp(`^${enriched.weaverName}$`, "i") },
+      let weaver = await Account.findOne({
+        accountName: { $regex: new RegExp(`^${enriched.weaverName.trim()}$`, "i") },
         roleType: "Weaver",
       });
       if (weaver) {
@@ -177,6 +199,18 @@ async function enrichOrderData(data) {
         enriched.weaverDetails = buildMasterSnapshot(weaver);
         enriched.weaverGstin = enriched.weaverGstin || weaver.gstin || "";
         enriched.weaverAddress = enriched.weaverAddress || weaver.address || "";
+      } else {
+        // Auto-create Weaver master
+        console.log(`📋 Auto-creating Weaver master: "${enriched.weaverName}"`);
+        weaver = await Account.create({
+          accountName: enriched.weaverName.trim(),
+          roleType: "Weaver",
+          gstin: enriched.weaverGstin || "",
+          address: enriched.weaverAddress || "",
+          isActive: true,
+        });
+        enriched.weaverId = weaver._id;
+        enriched.weaverDetails = buildMasterSnapshot(weaver);
       }
     }
 
@@ -254,7 +288,7 @@ router.get("/", requireAuth, async (req, res, next) => {
 // GET /api/orders/:id
 router.get("/:id", requireAuth, async (req, res, next) => {
   try {
-    const order = await Order.findById(req.params.id);
+    const order = await Order.findById(req.params.id).populate("codeMasterId");
     if (!order) return res.status(404).json({ error: "Order not found" });
     res.json(order);
   } catch (err) {

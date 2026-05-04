@@ -19,6 +19,7 @@ const lotSchema = new mongoose.Schema(
       required: true,
     },
     partyName: { type: String, required: true },
+    masterName: { type: String },
     marka: { type: String, required: true },
     qualityName: { type: String, required: true },
     challanNo: { type: String },

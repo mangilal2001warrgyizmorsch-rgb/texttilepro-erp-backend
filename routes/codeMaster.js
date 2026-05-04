@@ -17,7 +17,7 @@ router.get("/", requireAuth, async (req, res, next) => {
 // GET /api/code-master/by-account/:accountId
 router.get("/by-account/:accountId", requireAuth, async (req, res, next) => {
   try {
-    const codes = await CodeMaster.find({ accountId: req.params.accountId });
+    const codes = await CodeMaster.find({ accountId: req.params.accountId }).sort({ createdAt: -1 });
     res.json(codes);
   } catch (err) {
     next(err);

@@ -109,7 +109,7 @@ router.post("/", requireAuth, async (req, res, next) => {
       status: "pending" 
     });
     if (body.orderId) {
-      await Order.findByIdAndUpdate(body.orderId, { status: "PendingChallan" });
+      await Order.findByIdAndUpdate(body.orderId, { status: "ChallanIssued" });
     }
     res.status(201).json(challan);
   } catch (err) {
