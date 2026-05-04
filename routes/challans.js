@@ -34,7 +34,16 @@ router.get("/", requireAuth, async (req, res, next) => {
     const skip = (page - 1) * limit;
 
     const filter = {};
-    if (req.query.status) filter.status = req.query.status;
+    if (req.query.status) {
+      const statuses = req.query.status.split(",").map(s => s.trim());
+      if (statuses.length > 1) {
+        // Support querying multiple statuses using $in operator
+        // For backwards compatibility and case insensitivity, we use regex for each
+        filter.status = { $in: statuses.map(s => new RegExp(`^${s}$`, 'i')) };
+      } else {
+        filter.status = { $regex: new RegExp(`^${req.query.status}$`, 'i') };
+      }
+    }
     
     // Search across multiple fields
     if (search) {
