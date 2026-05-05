@@ -21,6 +21,7 @@ import dispatchRoutes from "./routes/dispatches.js";
 import billRoutes from "./routes/bills.js";
 import ocrRoutes from "./routes/ocr.js";
 import vehicleRoutes from "./routes/vehicles.js";
+import productionRoutes from "./routes/production.js";
 
 const app = express();
 const PORT = process.env.PORT || 5500;
@@ -48,6 +49,7 @@ app.use("/api/dispatches", dispatchRoutes);
 app.use("/api/bills", billRoutes);
 app.use("/api/ocr", ocrRoutes);
 app.use("/api/vehicles", vehicleRoutes);
+app.use("/api/production", productionRoutes);
 
 // Health check
 app.get("/api/health", (req, res) => {

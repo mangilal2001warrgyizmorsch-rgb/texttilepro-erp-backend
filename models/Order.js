@@ -8,6 +8,9 @@ const takaDetailSchema = new mongoose.Schema(
     weight: { type: Number },
     isStamped: { type: Boolean, default: false },
     stampedAt: { type: String },
+    finishMeter: { type: Number },
+    isFinishCompleted: { type: Boolean, default: false },
+    finishCompletedAt: { type: String },
   },
   { _id: false }
 );
