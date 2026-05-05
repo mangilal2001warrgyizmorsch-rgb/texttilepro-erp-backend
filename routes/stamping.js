@@ -39,37 +39,75 @@ router.get("/", requireAuth, async (req, res, next) => {
 // GET /api/stamping/search-taka — Search for Unstamped Taka
 router.get("/search-taka", requireAuth, async (req, res, next) => {
   try {
-    const { takaMarka, weaverChNo, weaverMarka, baleNo } = req.query;
+    const { takaMarka, weaverChNo, weaverMarka, baleNo, lotNo, takaNo } = req.query;
     
-    let query = {
-      status: { $in: ["ChallanIssued", "LotCreated", "InProcess"] },
+    // 1. Identify valid orders based on status and filters
+    let orderQuery = {
+      status: { $in: ["ChallanIssued", "LotCreated", "InProcess", "Finished"] },
       "takaDetails.isStamped": false
     };
 
-    if (weaverChNo) query.weaverChNo = { $regex: weaverChNo, $options: "i" };
-    if (weaverMarka) query.weaverMarka = { $regex: weaverMarka, $options: "i" };
-    if (baleNo) query.baleNo = { $regex: baleNo, $options: "i" };
-    if (takaMarka) query["takaDetails.marka"] = { $regex: takaMarka, $options: "i" };
+    if (weaverChNo) orderQuery.weaverChNo = { $regex: weaverChNo, $options: "i" };
+    if (weaverMarka) orderQuery.weaverMarka = { $regex: weaverMarka, $options: "i" };
+    if (baleNo) orderQuery.baleNo = { $regex: baleNo, $options: "i" };
+    
+    // If takaMarka is provided, search in either the order's main marka OR the taka's specific marka
+    if (takaMarka) {
+      orderQuery.$or = [
+        { "marka": { $regex: takaMarka, $options: "i" } },
+        { "takaDetails.marka": { $regex: takaMarka, $options: "i" } }
+      ];
+    }
 
-    const orders = await Order.find(query);
-    const orderIds = orders.map(o => o._id);
-    const lots = await Lot.find({ orderId: { $in: orderIds } });
+    // If takaNo is provided, ensure the order has that taka
+    if (takaNo) {
+      orderQuery["takaDetails.takaNo"] = { $regex: takaNo, $options: "i" };
+    }
+
+    let orders = await Order.find(orderQuery);
+    let orderIds = orders.map(o => o._id);
+
+    // 2. Find Lots for these orders (Mandatory filter: only Taka with assigned lots)
+    let lotQuery = { orderId: { $in: orderIds } };
+    if (lotNo) {
+      lotQuery.lotNo = { $regex: lotNo, $options: "i" };
+    }
+    
+    const lots = await Lot.find(lotQuery);
+    const validOrderIdsWithLots = lots.map(l => l.orderId.toString());
+
+    // Filter orders to only those that have a corresponding lot
+    orders = orders.filter(o => validOrderIdsWithLots.includes(o._id.toString()));
 
     const results = [];
     for (const order of orders) {
       const lot = lots.find(l => l.orderId.toString() === order._id.toString());
+      if (!lot) continue; // Safety check
+
       for (const taka of order.takaDetails) {
         if (!taka.isStamped) {
-          // If takaMarka filter is provided, check if this specific taka matches
-          if (takaMarka && !new RegExp(takaMarka, "i").test(taka.marka)) continue;
+          // In-memory filters for specific taka row matches
+          
+          // 1. Taka Marka fallback match
+          if (takaMarka) {
+            const regex = new RegExp(takaMarka, "i");
+            const resolvedMarka = taka.marka || order.marka || "";
+            if (!regex.test(resolvedMarka)) continue;
+          }
+
+          // 2. Taka No specific match
+          if (takaNo) {
+            const regex = new RegExp(takaNo, "i");
+            if (!regex.test(taka.takaNo || "")) continue;
+          }
 
           results.push({
             orderId: order._id,
-            lotNo: lot?.lotNo || "N/A",
+            lotNo: lot.lotNo,
             partyMarka: order.marka,
             takaNo: taka.takaNo,
             takaMeter: taka.meter,
-            takaMarka: taka.marka,
+            takaMarka: taka.marka || order.marka, // Fallback to Party Marka
             weaverChNo: order.weaverChNo,
             weaverMarka: order.weaverMarka,
             baleNo: order.baleNo
@@ -119,6 +157,7 @@ router.post("/stamp-multiple", requireAuth, async (req, res, next) => {
         order.takaDetails = order.takaDetails.map(t => 
           takaNosToStamp.includes(t.takaNo) ? { ...t.toObject(), isStamped: true, stampedAt: now } : t
         );
+        order.status = "Stamping Done"; // Update status
         await order.save();
       }
     }

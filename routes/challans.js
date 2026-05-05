@@ -109,7 +109,7 @@ router.post("/", requireAuth, async (req, res, next) => {
       status: "pending" 
     });
     if (body.orderId) {
-      await Order.findByIdAndUpdate(body.orderId, { status: "ChallanIssued" });
+      await Order.findByIdAndUpdate(body.orderId, { status: "Challan Created" });
     }
     res.status(201).json(challan);
   } catch (err) {
@@ -168,7 +168,7 @@ router.delete("/:id", requireAuth, async (req, res, next) => {
     const c = await Challan.findById(req.params.id);
     if (!c) return res.status(404).json({ error: "Challan not found" });
     if (c.orderId) {
-      await Order.findByIdAndUpdate(c.orderId, { status: "draft" });
+      await Order.findByIdAndUpdate(c.orderId, { status: "Order Created" });
     }
     await Challan.findByIdAndDelete(req.params.id);
     res.json({ success: true });

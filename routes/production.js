@@ -57,6 +57,7 @@ router.post("/save-finish-meter", requireAuth, async (req, res, next) => {
       );
     }
 
+    order.status = "Finish Meter Updated"; // Update status
     await order.save();
 
     // Check if all takas in the order are now finish-completed

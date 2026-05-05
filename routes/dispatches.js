@@ -40,7 +40,7 @@ router.post("/", requireAuth, async (req, res, next) => {
     const dispatchNo = `DSP-${dateStr}-${String(seq).padStart(4, "0")}`;
     const dispatch = await Dispatch.create({ ...req.body, dispatchNo, status: "Dispatched" });
     await Lot.findByIdAndUpdate(req.body.lotId, { status: "Dispatched" });
-    await Order.findByIdAndUpdate(req.body.orderId, { status: "Dispatched" });
+    await Order.findByIdAndUpdate(req.body.orderId, { status: "Dispatched / Billed" });
     res.status(201).json(dispatch);
   } catch (err) { next(err); }
 });

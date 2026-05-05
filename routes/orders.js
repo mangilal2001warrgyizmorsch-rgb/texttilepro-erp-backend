@@ -85,7 +85,31 @@ async function enrichOrderData(data) {
         enriched.partyGstin = enriched.partyGstin || party.gstin || "";
         enriched.partyAddress = enriched.partyAddress || party.address || "";
       }
-    } else if (!enriched.partyId && enriched.partyName) {
+    } else if (enriched.partyGstin) {
+      // Prioritize GST-based lookup to avoid duplicates
+      let party = await Account.findOne({
+        gstin: { $regex: new RegExp(`^${enriched.partyGstin.trim()}$`, "i") },
+        roleType: { $in: ["Master", "Customer", "Supplier"] },
+      });
+      if (party) {
+        enriched.partyId = party._id;
+        enriched.partyDetails = buildMasterSnapshot(party);
+        enriched.partyName = enriched.partyName || party.accountName;
+        enriched.partyAddress = enriched.partyAddress || party.address || "";
+      } else if (enriched.partyName) {
+        // Create new if name also provided
+        console.log(`📋 Auto-creating Party master by GST: "${enriched.partyName}"`);
+        party = await Account.create({
+          accountName: enriched.partyName.trim(),
+          roleType: "Customer",
+          gstin: enriched.partyGstin.trim(),
+          address: enriched.partyAddress || "",
+          isActive: true,
+        });
+        enriched.partyId = party._id;
+        enriched.partyDetails = buildMasterSnapshot(party);
+      }
+    } else if (enriched.partyName) {
       let party = await Account.findOne({
         accountName: { $regex: new RegExp(`^${enriched.partyName.trim()}$`, "i") },
         roleType: { $in: ["Master", "Customer", "Supplier"] },
@@ -96,8 +120,8 @@ async function enrichOrderData(data) {
         enriched.partyGstin = enriched.partyGstin || party.gstin || "";
         enriched.partyAddress = enriched.partyAddress || party.address || "";
       } else {
-        // Auto-create Party master
-        console.log(`📋 Auto-creating Party master: "${enriched.partyName}"`);
+        // Auto-create Party master by Name
+        console.log(`📋 Auto-creating Party master by Name: "${enriched.partyName}"`);
         party = await Account.create({
           accountName: enriched.partyName.trim(),
           roleType: "Customer",
@@ -302,7 +326,7 @@ router.post("/", requireAuth, async (req, res, next) => {
     const enrichedData = await enrichOrderData(req.body);
     const order = await Order.create({
       ...enrichedData,
-      status: "draft",
+      status: "Order Created",
     });
     res.status(201).json(order);
   } catch (err) {
@@ -326,6 +350,15 @@ router.patch("/:id", requireAuth, async (req, res, next) => {
 // DELETE /api/orders/:id
 router.delete("/:id", requireAuth, async (req, res, next) => {
   try {
+    const order = await Order.findById(req.params.id);
+    if (!order) return res.status(404).json({ error: "Order not found" });
+
+    if (order.status !== "Order Created") {
+      return res.status(400).json({ 
+        error: "This order cannot be deleted because further process is already completed." 
+      });
+    }
+
     await Order.findByIdAndDelete(req.params.id);
     res.json({ success: true });
   } catch (err) {
@@ -362,7 +395,7 @@ router.post("/batch", requireAuth, async (req, res, next) => {
         );
         const order = await Order.create({
           ...enrichedData,
-          status: "draft",
+          status: "Order Created",
           ocrExtractedData: data.ocrExtractedData
             ? JSON.stringify(data.ocrExtractedData)
             : undefined,
