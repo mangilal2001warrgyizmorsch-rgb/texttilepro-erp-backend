@@ -39,7 +39,7 @@ router.get("/", requireAuth, async (req, res, next) => {
 // GET /api/stamping/search-taka — Search for Unstamped Taka
 router.get("/search-taka", requireAuth, async (req, res, next) => {
   try {
-    const { takaMarka, weaverChNo, weaverMarka, baleNo, lotNo, takaNo } = req.query;
+    const { takaMarka, weaverChNo, weaverMarka, baleNo, lotNo } = req.query;
     
     // 1. Identify valid orders based on status and filters
     let orderQuery = {
@@ -48,20 +48,13 @@ router.get("/search-taka", requireAuth, async (req, res, next) => {
     };
 
     if (weaverChNo) orderQuery.weaverChNo = { $regex: weaverChNo, $options: "i" };
-    if (weaverMarka) orderQuery.weaverMarka = { $regex: weaverMarka, $options: "i" };
+    if (weaverMarka) orderQuery["marka"] = { $regex: weaverMarka, $options: "i" };
     if (baleNo) orderQuery.baleNo = { $regex: baleNo, $options: "i" };
     
-    // If takaMarka is provided, search in either the order's main marka OR the taka's specific marka
+    // If takaMarka is provided, search in the taka's takaNo field
+    // (UI label "Taka Marka" maps to takaNo in the database)
     if (takaMarka) {
-      orderQuery.$or = [
-        { "marka": { $regex: takaMarka, $options: "i" } },
-        { "takaDetails.marka": { $regex: takaMarka, $options: "i" } }
-      ];
-    }
-
-    // If takaNo is provided, ensure the order has that taka
-    if (takaNo) {
-      orderQuery["takaDetails.takaNo"] = { $regex: takaNo, $options: "i" };
+      orderQuery["takaDetails.takaNo"] = { $regex: takaMarka, $options: "i" };
     }
 
     let orders = await Order.find(orderQuery);
@@ -84,20 +77,14 @@ router.get("/search-taka", requireAuth, async (req, res, next) => {
       const lot = lots.find(l => l.orderId.toString() === order._id.toString());
       if (!lot) continue; // Safety check
 
-      for (const taka of order.takaDetails) {
+      for (let takaIndex = 0; takaIndex < order.takaDetails.length; takaIndex++) {
+        const taka = order.takaDetails[takaIndex];
         if (!taka.isStamped) {
           // In-memory filters for specific taka row matches
           
-          // 1. Taka Marka fallback match
+          // 1. Taka Marka filter: search against takaNo field
           if (takaMarka) {
             const regex = new RegExp(takaMarka, "i");
-            const resolvedMarka = taka.marka || order.marka || "";
-            if (!regex.test(resolvedMarka)) continue;
-          }
-
-          // 2. Taka No specific match
-          if (takaNo) {
-            const regex = new RegExp(takaNo, "i");
             if (!regex.test(taka.takaNo || "")) continue;
           }
 
@@ -107,7 +94,8 @@ router.get("/search-taka", requireAuth, async (req, res, next) => {
             partyMarka: order.marka,
             takaNo: taka.takaNo,
             takaMeter: taka.meter,
-            takaMarka: taka.marka || order.marka, // Fallback to Party Marka
+            takaMarka: taka.marka || order.marka, // Display taka's marka, fallback to party marka
+            takaSerialNo: takaIndex + 1, // Serial number based on position in takaDetails array
             weaverChNo: order.weaverChNo,
             weaverMarka: order.weaverMarka,
             baleNo: order.baleNo
