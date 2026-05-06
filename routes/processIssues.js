@@ -44,7 +44,7 @@ router.post("/", requireAuth, async (req, res, next) => {
   try {
     const issueNo = await generateIssueNo();
     const pi = await ProcessIssue.create({ ...req.body, issueNo, status: "Issued" });
-    await Lot.findByIdAndUpdate(req.body.lotId, { status: "InProcess" });
+    await Lot.findByIdAndUpdate(req.body.lotId, { status: "InProcess", processType: req.body.processType });
     await Order.findByIdAndUpdate(req.body.orderId, { status: "InProcess" });
     res.status(201).json(pi);
   } catch (err) { next(err); }

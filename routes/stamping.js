@@ -8,9 +8,10 @@ const router = Router();
 // GET /api/stamping — list Pending Lots for Stamping
 router.get("/", requireAuth, async (req, res, next) => {
   try {
-    // Find orders with unstamped takas
+    // Find orders with at least one unstamped taka
+    // Use correct status values matching the Order schema enum
     const ordersWithUnstamped = await Order.find({
-      status: { $in: ["ChallanIssued", "LotCreated", "Lot Created", "InProcess"] },
+      status: { $in: ["Lot Created", "Stamping Done", "In Process", "Challan Created"] },
       "takaDetails.isStamped": false
     }, "_id");
 
@@ -19,7 +20,6 @@ router.get("/", requireAuth, async (req, res, next) => {
     // Find Lots associated with these orders
     const lots = await Lot.find({ orderId: { $in: orderIds } }).sort({ createdAt: -1 });
 
-    // The user wants: Date, Lot No, Party Name, Master Name, Quality, Total Taka, Total Meter
     const response = lots.map(lot => ({
       _id: lot._id,
       orderId: lot.orderId,
@@ -42,8 +42,9 @@ router.get("/search-taka", requireAuth, async (req, res, next) => {
     const { takaMarka, weaverChNo, weaverMarka, baleNo, lotNo } = req.query;
     
     // 1. Identify valid orders based on status and filters
+    // Use correct status values matching the Order schema enum
     let orderQuery = {
-      status: { $in: ["ChallanIssued", "LotCreated", "Lot Created", "InProcess", "Finished"] },
+      status: { $in: ["Lot Created", "Stamping Done", "In Process", "Challan Created"] },
       "takaDetails.isStamped": false
     };
 
@@ -51,10 +52,13 @@ router.get("/search-taka", requireAuth, async (req, res, next) => {
     if (weaverMarka) orderQuery["marka"] = { $regex: weaverMarka, $options: "i" };
     if (baleNo) orderQuery.baleNo = { $regex: baleNo, $options: "i" };
     
-    // If takaMarka is provided, search in the taka's takaNo field
-    // (UI label "Taka Marka" maps to takaNo in the database)
+    // If takaMarka is provided, search in the taka's marka field AND takaNo field
     if (takaMarka) {
-      orderQuery["takaDetails.takaNo"] = { $regex: takaMarka, $options: "i" };
+      orderQuery["$or"] = [
+        { "takaDetails.marka": { $regex: takaMarka, $options: "i" } },
+        { "takaDetails.takaNo": { $regex: takaMarka, $options: "i" } },
+        { "marka": { $regex: takaMarka, $options: "i" } }
+      ];
     }
 
     let orders = await Order.find(orderQuery);
@@ -63,7 +67,9 @@ router.get("/search-taka", requireAuth, async (req, res, next) => {
     // 2. Find Lots for these orders (Mandatory filter: only Taka with assigned lots)
     let lotQuery = { orderId: { $in: orderIds } };
     if (lotNo) {
-      lotQuery.lotNo = { $regex: lotNo, $options: "i" };
+      // Escape special regex characters in lotNo (especially /)
+      const escapedLotNo = lotNo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      lotQuery.lotNo = { $regex: escapedLotNo, $options: "i" };
     }
     
     const lots = await Lot.find(lotQuery);
@@ -82,10 +88,13 @@ router.get("/search-taka", requireAuth, async (req, res, next) => {
         if (!taka.isStamped) {
           // In-memory filters for specific taka row matches
           
-          // 1. Taka Marka filter: search against takaNo field
+          // 1. Taka Marka filter: search against takaNo and marka fields
           if (takaMarka) {
-            const regex = new RegExp(takaMarka, "i");
-            if (!regex.test(taka.takaNo || "")) continue;
+            const regex = new RegExp(takaMarka.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), "i");
+            const takaNoMatch = regex.test(taka.takaNo || "");
+            const markaMatch = regex.test(taka.marka || "");
+            const orderMarkaMatch = regex.test(order.marka || "");
+            if (!takaNoMatch && !markaMatch && !orderMarkaMatch) continue;
           }
 
           results.push({
@@ -94,8 +103,9 @@ router.get("/search-taka", requireAuth, async (req, res, next) => {
             partyMarka: order.marka,
             takaNo: taka.takaNo,
             takaMeter: taka.meter,
-            takaMarka: taka.marka || order.marka, // Display taka's marka, fallback to party marka
-            takaSerialNo: takaIndex + 1, // Serial number based on position in takaDetails array
+            takaMarka: taka.marka || order.marka,
+            takaIndex: takaIndex, // Use index for precise taka identification
+            takaSerialNo: takaIndex + 1,
             weaverChNo: order.weaverChNo,
             weaverMarka: order.weaverMarka,
             baleNo: order.baleNo
@@ -111,14 +121,23 @@ router.get("/search-taka", requireAuth, async (req, res, next) => {
 // POST /api/stamping/stamp
 router.post("/stamp", requireAuth, async (req, res, next) => {
   try {
-    const { orderId, takaNo } = req.body;
+    const { orderId, takaIndex } = req.body;
     const order = await Order.findById(orderId);
     if (!order) return res.status(404).json({ error: "Order not found" });
     
     const now = new Date().toISOString();
-    order.takaDetails = order.takaDetails.map(t => 
-      t.takaNo === takaNo ? { ...t.toObject(), isStamped: true, stampedAt: now } : t
-    );
+    
+    // Use takaIndex for precise taka identification
+    if (takaIndex !== undefined && takaIndex >= 0 && takaIndex < order.takaDetails.length) {
+      const taka = order.takaDetails[takaIndex];
+      order.takaDetails[takaIndex] = { ...taka.toObject(), isStamped: true, stampedAt: now };
+    }
+    
+    // Only update status to "Stamping Done" if ALL takas are stamped
+    const allStamped = order.takaDetails.every(t => t.isStamped);
+    if (allStamped) {
+      order.status = "Stamping Done";
+    }
     
     await order.save();
     res.json({ success: true });
@@ -128,22 +147,25 @@ router.post("/stamp", requireAuth, async (req, res, next) => {
 // POST /api/stamping/stamp-multiple
 router.post("/stamp-multiple", requireAuth, async (req, res, next) => {
   try {
-    const { items, stampmanId, stampmanName, stampmanCode } = req.body; // Array of { orderId, takaNo }
+    const { items, stampmanId, stampmanName, stampmanCode } = req.body;
+    // items: Array of { orderId, takaIndex }
     const now = new Date().toISOString();
 
     // Group items by orderId for efficient saving
     const grouped = items.reduce((acc, item) => {
       acc[item.orderId] = acc[item.orderId] || [];
-      acc[item.orderId].push(item.takaNo);
+      acc[item.orderId].push(item.takaIndex);
       return acc;
     }, {});
 
     for (const orderId in grouped) {
       const order = await Order.findById(orderId);
       if (order) {
-        const takaNosToStamp = grouped[orderId];
-        order.takaDetails = order.takaDetails.map(t => 
-          takaNosToStamp.includes(t.takaNo) ? { 
+        const takaIndicesToStamp = grouped[orderId];
+        
+        // Stamp only the selected takas by index
+        order.takaDetails = order.takaDetails.map((t, idx) => 
+          takaIndicesToStamp.includes(idx) ? { 
             ...t.toObject(), 
             isStamped: true, 
             stampedAt: now,
@@ -152,7 +174,14 @@ router.post("/stamp-multiple", requireAuth, async (req, res, next) => {
             stampmanCode: stampmanCode || undefined
           } : t
         );
-        order.status = "Stamping Done"; // Update status
+        
+        // Only update status to "Stamping Done" if ALL takas are stamped
+        const allStamped = order.takaDetails.every(t => t.isStamped);
+        if (allStamped) {
+          order.status = "Stamping Done";
+        }
+        // If partially stamped, keep existing status (don't change to "Stamping Done")
+        
         await order.save();
       }
     }
@@ -164,10 +193,21 @@ router.post("/stamp-multiple", requireAuth, async (req, res, next) => {
 // POST /api/stamping/unstamp
 router.post("/unstamp", requireAuth, async (req, res, next) => {
   try {
-    const { orderId, takaNo } = req.body;
+    const { orderId, takaIndex } = req.body;
     const order = await Order.findById(orderId);
     if (!order) return res.status(404).json({ error: "Order not found" });
-    order.takaDetails = order.takaDetails.map(t => t.takaNo === takaNo ? { ...t.toObject(), isStamped: false, stampedAt: undefined } : t);
+    
+    if (takaIndex !== undefined && takaIndex >= 0 && takaIndex < order.takaDetails.length) {
+      const taka = order.takaDetails[takaIndex];
+      order.takaDetails[takaIndex] = { ...taka.toObject(), isStamped: false, stampedAt: undefined };
+    }
+    
+    // Revert status if not all stamped
+    const allStamped = order.takaDetails.every(t => t.isStamped);
+    if (!allStamped && order.status === "Stamping Done") {
+      order.status = "Lot Created";
+    }
+    
     await order.save();
     res.json(order.takaDetails);
   } catch (err) { next(err); }
@@ -181,10 +221,10 @@ router.post("/stamp-all", requireAuth, async (req, res, next) => {
     if (!order) return res.status(404).json({ error: "Order not found" });
     const now = new Date().toISOString();
     order.takaDetails = order.takaDetails.map(t => ({ ...t.toObject(), isStamped: true, stampedAt: t.stampedAt || now }));
+    order.status = "Stamping Done";
     await order.save();
     res.json(order.takaDetails);
   } catch (err) { next(err); }
 });
 
 export default router;
-
