@@ -10,7 +10,7 @@ router.get("/", requireAuth, async (req, res, next) => {
   try {
     // Find orders with unstamped takas
     const ordersWithUnstamped = await Order.find({
-      status: { $in: ["ChallanIssued", "LotCreated", "InProcess"] },
+      status: { $in: ["ChallanIssued", "LotCreated", "Lot Created", "InProcess"] },
       "takaDetails.isStamped": false
     }, "_id");
 
@@ -43,7 +43,7 @@ router.get("/search-taka", requireAuth, async (req, res, next) => {
     
     // 1. Identify valid orders based on status and filters
     let orderQuery = {
-      status: { $in: ["ChallanIssued", "LotCreated", "InProcess", "Finished"] },
+      status: { $in: ["ChallanIssued", "LotCreated", "Lot Created", "InProcess", "Finished"] },
       "takaDetails.isStamped": false
     };
 
@@ -128,7 +128,7 @@ router.post("/stamp", requireAuth, async (req, res, next) => {
 // POST /api/stamping/stamp-multiple
 router.post("/stamp-multiple", requireAuth, async (req, res, next) => {
   try {
-    const { items } = req.body; // Array of { orderId, takaNo }
+    const { items, stampmanId, stampmanName, stampmanCode } = req.body; // Array of { orderId, takaNo }
     const now = new Date().toISOString();
 
     // Group items by orderId for efficient saving
@@ -143,7 +143,14 @@ router.post("/stamp-multiple", requireAuth, async (req, res, next) => {
       if (order) {
         const takaNosToStamp = grouped[orderId];
         order.takaDetails = order.takaDetails.map(t => 
-          takaNosToStamp.includes(t.takaNo) ? { ...t.toObject(), isStamped: true, stampedAt: now } : t
+          takaNosToStamp.includes(t.takaNo) ? { 
+            ...t.toObject(), 
+            isStamped: true, 
+            stampedAt: now,
+            stampmanId: stampmanId || undefined,
+            stampmanName: stampmanName || undefined,
+            stampmanCode: stampmanCode || undefined
+          } : t
         );
         order.status = "Stamping Done"; // Update status
         await order.save();

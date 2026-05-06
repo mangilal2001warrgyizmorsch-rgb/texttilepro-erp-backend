@@ -22,6 +22,7 @@ import billRoutes from "./routes/bills.js";
 import ocrRoutes from "./routes/ocr.js";
 import vehicleRoutes from "./routes/vehicles.js";
 import productionRoutes from "./routes/production.js";
+import employeeRoutes from "./routes/employees.js";
 
 const app = express();
 const PORT = process.env.PORT || 5500;
@@ -50,6 +51,7 @@ app.use("/api/bills", billRoutes);
 app.use("/api/ocr", ocrRoutes);
 app.use("/api/vehicles", vehicleRoutes);
 app.use("/api/production", productionRoutes);
+app.use("/api/employees", employeeRoutes);
 
 // Health check
 app.get("/api/health", (req, res) => {

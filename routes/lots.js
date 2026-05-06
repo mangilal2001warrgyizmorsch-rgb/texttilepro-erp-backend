@@ -96,7 +96,7 @@ router.post("/", requireAuth, async (req, res, next) => {
     await Challan.findByIdAndUpdate(req.body.challanId, {
       status: "LotCreated",
     });
-    await Order.findByIdAndUpdate(req.body.orderId, { status: "Lot Created" });
+    await Order.findByIdAndUpdate(req.body.orderId, { status: "LotCreated" });
     res.status(201).json(lot);
   } catch (err) {
     next(err);
