@@ -94,9 +94,9 @@ router.post("/", requireAuth, async (req, res, next) => {
 
     const lot = await Lot.create(lotData);
     await Challan.findByIdAndUpdate(req.body.challanId, {
-      status: "LotCreated",
+      status: "Lot Created",
     });
-    await Order.findByIdAndUpdate(req.body.orderId, { status: "LotCreated" });
+    await Order.findByIdAndUpdate(req.body.orderId, { status: "Lot Created" });
     res.status(201).json(lot);
   } catch (err) {
     next(err);

@@ -11,11 +11,24 @@ const takaDetailSchema = new mongoose.Schema(
     stampmanId: { type: mongoose.Schema.Types.ObjectId, ref: "Employee" },
     stampmanName: { type: String },
     stampmanCode: { type: String },
-    finishMeter: { type: Number },
+    finishMeter: { type: Number, default: 0 },
     isFinishCompleted: { type: Boolean, default: false },
     finishCompletedAt: { type: String },
+    tpStatus: {
+      type: String,
+      enum: ["Pending", "TP Pending", "Completed"],
+      default: "Pending",
+    },
+    tpEntries: [
+      {
+        finishMeter: { type: Number, required: true },
+        pendingMeter: { type: Number },
+        entryDate: { type: String },
+        userName: { type: String },
+      },
+    ],
   },
-  { _id: false }
+  { _id: false },
 );
 
 // Embedded snapshot of master record at order creation time
@@ -33,7 +46,7 @@ const masterDetailSchema = new mongoose.Schema(
     gstType: { type: String },
     clientCode: { type: String },
   },
-  { _id: false }
+  { _id: false },
 );
 
 // Embedded snapshot of quality master record
@@ -51,7 +64,7 @@ const qualityDetailSchema = new mongoose.Schema(
     greyRate: { type: Number },
     dispatchRate: { type: Number },
   },
-  { _id: false }
+  { _id: false },
 );
 
 const orderSchema = new mongoose.Schema(
@@ -127,6 +140,11 @@ const orderSchema = new mongoose.Schema(
         "Finish Meter Updated",
         "Ready for Dispatch",
         "Dispatched / Billed",
+        // Compatibility
+        "InProcess",
+        "LotCreated",
+        "PendingChallan",
+        "ChallanIssued",
       ],
       default: "Order Created",
     },
@@ -134,7 +152,7 @@ const orderSchema = new mongoose.Schema(
     ocrFileId: { type: String },
     ocrExtractedData: { type: String },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 orderSchema.index({ status: 1 });

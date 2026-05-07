@@ -68,17 +68,17 @@ router.get("/stats", requireAuth, requireOwner, async (req, res, next) => {
     const totalPending = allBills.filter(b => b.status !== "Paid").reduce((s, b) => s + b.totalAmount, 0);
 
     const ordersByStatus = {
-      PendingChallan: allOrders.filter(o => o.status === "PendingChallan").length,
-      ChallanIssued: allOrders.filter(o => o.status === "ChallanIssued").length,
-      LotCreated: allOrders.filter(o => o.status === "LotCreated").length,
-      InProcess: allOrders.filter(o => o.status === "InProcess").length,
-      Completed: allOrders.filter(o => o.status === "Completed").length,
-      Dispatched: allOrders.filter(o => o.status === "Dispatched").length,
+      "Order Created": allOrders.filter(o => o.status === "Order Created").length,
+      "Challan Created": allOrders.filter(o => o.status === "Challan Created").length,
+      "Lot Created": allOrders.filter(o => o.status === "Lot Created").length,
+      "Stamping Done": allOrders.filter(o => o.status === "Stamping Done").length,
+      "In Process": allOrders.filter(o => o.status === "In Process").length,
+      "Finish Meter Updated": allOrders.filter(o => o.status === "Finish Meter Updated").length,
     };
 
     const lotsByStatus = {
       InStorage: allLots.filter(l => l.status === "InStorage").length,
-      InProcess: allLots.filter(l => l.status === "InProcess").length,
+      "In Process": allLots.filter(l => l.status === "In Process").length,
       Finished: allLots.filter(l => l.status === "Finished").length,
       Dispatched: allLots.filter(l => l.status === "Dispatched").length,
     };

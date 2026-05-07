@@ -33,7 +33,7 @@ const lotSchema = new mongoose.Schema(
     status: {
       type: String,
       required: true,
-      enum: ["InStorage", "InProcess", "Finished", "Dispatched"],
+      enum: ["InStorage", "In Process", "InProcess", "Finished", "Dispatched", "Lot Created", "LotCreated"],
       default: "InStorage",
     },
     processType: {
