@@ -290,7 +290,7 @@ router.post("/extract", requireAuth, upload.single("file"), async (req, res, nex
 
     // Helper: call external OCR with retry on failure (Render free tier cold start)
     const callExternalOcr = async (signal) => {
-      const OCR_URL = "https://challan-extractor2.onrender.com/extract";
+      const OCR_URL = "https://challan-extractor2-w9f1.onrender.com/extract";
       const MAX_RETRIES = 3;
       for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
         try {
